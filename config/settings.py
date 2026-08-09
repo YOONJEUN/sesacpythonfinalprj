@@ -5,8 +5,18 @@ load_dotenv()
 
 SEOUL_BIKE_API_KEY = os.getenv("SEOUL_BIKE_API_KEY")
 
+SEOUL_API_BASE_URL = f"http://openapi.seoul.go.kr:8088/{SEOUL_BIKE_API_KEY}/json"
+
 # 서울시 공공자전거 대여이력 정보
-SEOUL_API_BASE_URL = "http://openapi.seoul.go.kr:8088/(인증키)/json/tbCycleRentData/1/5/2022-10-01/1"
+BIKE_RENTAL_DATA_URL = f"{SEOUL_API_BASE_URL}/tbCycleRentData"
 
 # 서울시 공공자전거 대여소별 이용정보(월별)
-SEOUL_API_BASE_URL = "http://openapi.seoul.go.kr:8088/(인증키)/json/tbCycleStationUseMonthInfo/1/5/202208"
+BIKE_STATION_USE_INFO_URL = f"{SEOUL_API_BASE_URL}/tbCycleStationUseMonthInfo"
+
+def get_bike_rental_data_url(start_idx, end_idx, date):
+    # date가 숫자인지 -가 포함된 숫자인지 if로 걸러내기
+
+    return f"{BIKE_RENTAL_DATA_URL}/{start_idx}/{end_idx}/{date}"
+
+# "http://openapi.seoul.go.kr:8088/(인증키)/json/tbCycleRentData/1/5/2022-10-01/1"
+# "http://openapi.seoul.go.kr:8088/(인증키)/json/tbCycleStationUseMonthInfo/1/5/202208"
