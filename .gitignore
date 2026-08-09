@@ -6,5 +6,8 @@ dist/
 wheels/
 *.egg-info
 
-# Virtual environments
+# 가상환경
 .venv
+
+# 환경변수 및 인증키
+# .env
