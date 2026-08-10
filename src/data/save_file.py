@@ -1,39 +1,35 @@
-import json
-import pandas as pd
+"""Call the rental API and save selected response columns as CSV."""
+
+from datetime import date, timedelta
 from pathlib import Path
 
+import pandas as pd
+
+from src.api.bike_api import get_bike_rental_data
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-RAW_DATA_DIR = PROJECT_ROOT/"data"/"raw"
-PROCESSED_DATA_DIR = PROJECT_ROOT/"data"/"processed"
-
-def save_json(data, filename) : 
-    RAW_DATA_DIR.mkdir(parents=True, exist_ok=True)
-    save_path = RAW_DATA_DIR/filename
-    with open(save_path, "w", encoding="utf-8") as file : 
-        json.dump(data, file, ensure_ascii=False, indent=4)
-
-    print(f"json 저장 완료 : {save_path}")
+PROCESSED_DATA_DIR = PROJECT_ROOT / "data" / "processed"
+RENTAL_COLUMNS = ["RENT_DT", "RENT_ID", "RENT_NM", "RTN_DT", "RTN_ID", "RTN_NM", "USE_MIN", "USE_DST", "SEX_CD"]
 
 
-def save_json_to_csv(data, filename) : 
-    RAW_DATA_DIR.mkdir(parents=True, exist_ok=True)
-    save_path = RAW_DATA_DIR/filename
-
-    table_name = next(iter(data))
-    rows = data[table_name].get("row", [])
-
-    # DataFrame 변환
-    df = pd.DataFrame(rows)
-
-    # CSV 저장
-    df.to_csv(save_path,index=False,encoding="utf-8-sig")
-
-    print(f"csv 저장 완료 : {save_path}/{filename}")
-
-
-def save_processed_csv(data, filename):
+def save_rental_week(start_date: str = "2026-04-01", days: int = 7, page_size: int = 1000) -> Path:
+    """Fetch a requested week from the API and save only RENTAL_COLUMNS to CSV."""
+    if days < 1:
+        raise ValueError("days must be at least 1")
+    first_day = date.fromisoformat(start_date)
+    records: list[dict] = []
+    for offset in range(days):
+        request_date = (first_day + timedelta(days=offset)).isoformat()
+        for hour in range(24):
+            start = 1
+            while True:
+                payload = get_bike_rental_data(start, start + page_size - 1, request_date, hour)
+                rows = payload["rentData"].get("row", [])
+                records.extend({column: row.get(column) for column in RENTAL_COLUMNS} for row in rows)
+                if len(rows) < page_size:
+                    break
+                start += page_size
     PROCESSED_DATA_DIR.mkdir(parents=True, exist_ok=True)
-    save_path = PROCESSED_DATA_DIR/filename
-    data.to_csv(save_path, index=False, encoding="utf-8-sig")
-    print(f"csv 저장 완료: {save_path}")
+    path = PROCESSED_DATA_DIR / f"SeoulBikeRental_{first_day:%Y%m%d}_{days}days.csv"
+    pd.DataFrame(records, columns=RENTAL_COLUMNS).to_csv(path, index=False, encoding="utf-8-sig")
+    return path
