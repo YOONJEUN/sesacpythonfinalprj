@@ -1428,7 +1428,7 @@ wheels = [
 ]
 
 [[package]]
-name = "sesaceun"
+name = "sesacpythonfinalprj"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

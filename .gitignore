@@ -10,4 +10,5 @@ wheels/
 .venv
 
 # 환경변수 및 인증키
-# .env
+.env
+data/raw
