@@ -44,7 +44,7 @@ def save_rental_week(start_date: str = "2026-04-01", days: int = 7, page_size: i
     pd.DataFrame(records, columns=RENTAL_COLUMNS).to_csv(path, index=False, encoding="utf-8-sig")
     # return path
 
-def save_processed_rental_data(df : pd.DataFrame, filename : str) -> Path:
+def save_processed_data(df : pd.DataFrame, filename : str) -> Path:
     PROCESSED_DATA_DIR.mkdir(parents=True, exist_ok=True)
     path = PROCESSED_DATA_DIR / filename
     df.to_csv(path, index=False, encoding="utf-8-sig")

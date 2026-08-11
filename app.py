@@ -1,6 +1,7 @@
 """서울 공공자전거 수요 불균형 및 재배치 분석 Streamlit 대시보드."""
 
 import math
+import pandas as pd
 
 import koreanize_matplotlib  # noqa: F401 - matplotlib 한글 폰트 설정
 import matplotlib.pyplot as plt
@@ -11,6 +12,7 @@ import matplotlib.ticker as mticker
 from src.analysis.analysis import (
     calculate_gender_mix,
     calculate_hourly_returns,
+    calculate_daily_station_hourly_imbalance,
     calculate_monthly_imbalance,
     calculate_station_rebalancing,
     calculate_top_routes,
@@ -18,8 +20,8 @@ from src.analysis.analysis import (
     make_group_statistics,
 )
 from src.data.loader import RAW_DATA_DIR, PROCESSED_DATA_DIR, load_csv
-from src.data.preprocessing import add_imbalance, clean_station_df, preprocess_rental_data
-from src.data.save_file import save_processed_rental_data
+from src.data.preprocessing import add_imbalance, clean_station_df, preprocess_rental_data, preprocess_station_location
+from src.data.save_file import save_processed_data
 
 
 st.set_page_config(page_title="서울 공공자전거 수요 불균형 분석", layout="wide", page_icon="🚲")
@@ -58,12 +60,19 @@ loading_skeleton = st.skeleton(height=220)
 
 # save_file.py에서 API 데이터를 CSV로 저장한 뒤, 여기서는 저장된 파일만 읽기
 rental_file_path = RAW_DATA_DIR / "SeoulBikeRental_20260401_7days.csv"
+station_file_path = RAW_DATA_DIR / "SeoulBikeStationMaster.csv"
 # 데이터 읽어오기
 raw_rental_df = load_csv(rental_file_path.name, data_dir=RAW_DATA_DIR)
+raw_station_df = load_csv(station_file_path.name, data_dir=RAW_DATA_DIR)
 # 데이터 전처리하기
 rental_df = preprocess_rental_data(raw_rental_df)
+station_df = preprocess_station_location(raw_station_df)
 # 전처리한 데이터 저장하기
-save_processed_rental_data(rental_df, "SeoulBikeRental_20260401_7days_processed.csv")
+save_processed_data(rental_df, "SeoulBikeRental_20260401_7days_processed.csv")
+save_processed_data(station_df, "SeoulBikeStationMaster_processed.csv")
+
+
+
 
 
 loading_skeleton.empty()
@@ -154,9 +163,33 @@ with st.container(border=True):
 
 
 
-
+# 1-1. 따릉이 불균형 지수
 with st.container(border=True):
     st.header("1-1. 따릉이 불균형 지수")
+    combined_station_df = pd.concat([current_station_df, previous_station_df], ignore_index=True)
+    station_name, station_id, hourly_imbalance = calculate_daily_station_hourly_imbalance(
+        combined_station_df,
+        rental_df,
+        target_date="2026-04-01",
+    )
+    st.write("수요 불균형 수치가 가장 큰 대여소 한 곳을 골라 불균형 지수 확인")
+
+    fig, ax = plt.subplots(figsize=(12, 4.5))
+    colors = hourly_imbalance["imbalance"].ge(0).map({True: "#356FA8", False: "#C9534B"})
+    ax.bar(hourly_imbalance["hour"], hourly_imbalance["imbalance"], color=colors, width=0.75)
+    ax.axhline(0, color="#333333", linewidth=0.8)
+    
+    # 0이 축 정중앙에 오도록 y축 범위를 대칭으로 설정
+    max_abs_imbalance = hourly_imbalance["imbalance"].abs().max()
+    ax.set_ylim(-max_abs_imbalance * 1.1, max_abs_imbalance * 1.1)
+
+    ax.set_xticks(range(24))
+    ax.set_xlabel("시간대")
+    ax.set_ylabel("수요 불균형 지수")
+    ax.set_title("응암역2번출구 국민은행 앞 대여소의 수요 불균형 지수 (2026년 4월 1일)")
+    ax.grid(axis="y", alpha=0.3)
+    fig.tight_layout()
+    st.pyplot(fig, clear_figure=True)
 
 
 

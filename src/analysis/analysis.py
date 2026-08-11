@@ -13,6 +13,40 @@ def calculate_monthly_imbalance(df: pd.DataFrame) -> pd.DataFrame:
     return (df.groupby("stat_mn", as_index=False).agg(imbalance_abs_sum=("imbalance_abs", "sum"))
             .sort_values("imbalance_abs_sum", ascending=False))
 
+def calculate_daily_station_hourly_imbalance(
+    station_usage_df: pd.DataFrame,
+    rental_df: pd.DataFrame,
+    target_date: str = "2026-04-01",
+) -> tuple[str, int, pd.DataFrame]:
+    """Return hourly rental-minus-return imbalance for the most imbalanced station."""
+    station_scores = (
+        station_usage_df.groupby("station_name", as_index=False)
+        .agg(imbalance_abs_sum=("imbalance_abs", "sum"))
+        .sort_values("imbalance_abs_sum", ascending=False)
+    )
+    if station_scores.empty:
+        raise ValueError("Station usage data is empty.")
+
+    station_name = station_scores.iloc[0]["station_name"]
+    station_id_match = re.match(r"\s*(\d+)", str(station_name))
+    if station_id_match is None:
+        raise ValueError(f"No leading station ID found in station name: {station_name}")
+    station_id = int(station_id_match.group(1))
+
+    target_day = pd.Timestamp(target_date).date()
+    rentals_on_day = rental_df.loc[rental_df["rent_dt"].dt.date.eq(target_day)].copy()
+    returns_on_day = rental_df.loc[rental_df["rtn_dt"].dt.date.eq(target_day)].copy()
+    rentals_on_day["station_id_num"] = pd.to_numeric(rentals_on_day["rent_id"], errors="coerce")
+    returns_on_day["station_id_num"] = pd.to_numeric(returns_on_day["rtn_id"], errors="coerce")
+
+    rental_counts = rentals_on_day.loc[rentals_on_day["station_id_num"].eq(station_id)].groupby("rent_hour").size()
+    return_counts = returns_on_day.loc[returns_on_day["station_id_num"].eq(station_id)].groupby("rtn_hour").size()
+    hourly = pd.DataFrame({"hour": range(24)})
+    hourly["rentals"] = hourly["hour"].map(rental_counts).fillna(0).astype(int)
+    hourly["returns"] = hourly["hour"].map(return_counts).fillna(0).astype(int)
+    hourly["imbalance"] = hourly["rentals"] - hourly["returns"]
+    return str(station_name), station_id, hourly
+
 def make_group_statistics(df: pd.DataFrame) -> dict[str, pd.DataFrame]:
     aggregations = {"trip_count": ("rent_id", "size"), "avg_use_min": ("use_min", "mean"),
                     "median_use_min": ("use_min", "median"), "avg_use_dst": ("use_dst", "mean")}
