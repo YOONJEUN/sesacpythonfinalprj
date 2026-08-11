@@ -19,6 +19,11 @@ from src.analysis.analysis import (
     create_bar_chart,
     make_group_statistics,
 )
+from src.analysis.station_category import (
+    add_station_categories,
+    calculate_hourly_category_imbalance,
+    create_hourly_category_imbalance_chart,
+)
 from src.data.loader import RAW_DATA_DIR, PROCESSED_DATA_DIR, load_csv
 from src.data.preprocessing import add_imbalance, clean_station_df, preprocess_rental_data, preprocess_station_location
 from src.data.save_file import save_processed_data
@@ -231,44 +236,28 @@ with st.container(border=True):
         with c2:
             st.pyplot(create_bar_chart(hourly, "rent_hour", "avg_use_dst", "시간대별 평균 이용 거리", "#A65D8B"), clear_figure=True)
 
-# 3. 자전거 재배치 우선순위
+
+# 4. 대여소 유형별 시간대 불균형
 with st.container(border=True):
-    st.header("3. 자전거 재배치 우선순위")
-    min_trip_count = st.number_input("최소 이용 건수", min_value=0, value=30, step=10, key="rebalancing_min_count")
-    station_flow = calculate_station_rebalancing(rental_df)
-    station_flow = station_flow[(station_flow["rentals"] + station_flow["returns"]) >= min_trip_count]
-    top_routes = calculate_top_routes(rental_df)
-    top_routes = top_routes[top_routes["trip_count"] >= min_trip_count]
-    gender_mix = calculate_gender_mix(rental_df)
+    st.header("4. 대여소 유형별 시간대 불균형")
+    st.write(
+        "대여소명에 포함된 시설 키워드를 바탕으로 유형을 분류했습니다. "
+        "불균형 수치는 7일간 유형별 시간대 대여 건수에서 반납 건수를 뺀 값입니다."
+    )
 
-    c1, c2 = st.columns(2)
-    with c1:
-        st.pyplot(
-            create_bar_chart(
-                station_flow.nlargest(15, "net_outflow").sort_values("net_outflow"),
-                "net_outflow",
-                "station_name",
-                "자전거 공급 우선 대여소",
-                "#C9534B",
-            ),
-            clear_figure=True,
-        )
-    with c2:
-        st.pyplot(
-            create_bar_chart(
-                station_flow.nsmallest(15, "net_outflow").sort_values("net_outflow", ascending=False),
-                "net_outflow",
-                "station_name",
-                "자전거 회수 우선 대여소",
-                "#40845D",
-            ),
-            clear_figure=True,
-        )
+    categorized_rentals = add_station_categories(rental_df)
+    output_filename = "SeoulBikeRental_20260401_7days_station_categories.csv"
+    output_path = PROCESSED_DATA_DIR / output_filename
+    if not output_path.exists():
+        save_processed_data(categorized_rentals, output_filename)
 
-    tab1, tab2, tab3 = st.tabs(["재배치 우선 대여소", "주요 이동 경로", "성별 이용 분포"])
-    with tab1:
-        st.dataframe(station_flow.head(30), hide_index=True, use_container_width=True)
-    with tab2:
-        st.dataframe(top_routes, hide_index=True, use_container_width=True)
-    with tab3:
-        st.pyplot(create_bar_chart(gender_mix, "sex", "trip_count", "성별 대여 건수", "#6D78AD"), clear_figure=True)
+    hourly_category_imbalance = calculate_hourly_category_imbalance(categorized_rentals)
+    st.pyplot(create_hourly_category_imbalance_chart(hourly_category_imbalance), clear_figure=True)
+
+    st.subheader("유형별 요약")
+    category_summary = hourly_category_imbalance.groupby("category", as_index=False).agg(
+        total_imbalance=("imbalance", "sum"),
+        hourly_peak_abs_imbalance=("imbalance", lambda values: values.abs().max()),
+    )
+    st.dataframe(category_summary, hide_index=True, use_container_width=True)
+    st.dataframe(hourly_category_imbalance, hide_index=True, use_container_width=True)

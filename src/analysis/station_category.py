@@ -20,13 +20,24 @@ PATTERNS = [
 ]
 
 
+# def classify_station_names(names: pd.Series) -> pd.Series:
+#     result = pd.Series("\uae30\ud0c0", index=names.index, dtype="string")
+#     normalized = names.fillna("").astype("string")
+#     for category, pattern in PATTERNS:
+#         matches = normalized.str.contains(pattern, case=False, regex=True, na=False)
+#         result = result.mask(matches & result.eq("\uae30\ud0c0"), category)
+#     return result
+
+# Rebind after declarations so Arrow-backed string columns receive real Unicode regexes.
 def classify_station_names(names: pd.Series) -> pd.Series:
     result = pd.Series("\uae30\ud0c0", index=names.index, dtype="string")
     normalized = names.fillna("").astype("string")
     for category, pattern in PATTERNS:
-        matches = normalized.str.contains(pattern, case=False, regex=True, na=False)
+        resolved_pattern = pattern.encode("utf-8").decode("unicode_escape")
+        matches = normalized.str.contains(resolved_pattern, case=False, regex=True, na=False)
         result = result.mask(matches & result.eq("\uae30\ud0c0"), category)
     return result
+
 
 
 def add_station_categories(rental_df: pd.DataFrame) -> pd.DataFrame:
@@ -47,9 +58,21 @@ def calculate_hourly_category_imbalance(categorized_df: pd.DataFrame) -> pd.Data
 
 def create_hourly_category_imbalance_chart(hourly_df: pd.DataFrame) -> plt.Figure:
     fig, ax = plt.subplots(figsize=(13, 6))
+    # 카테고리별 하루 전체 불균형 절대값 합계를 구해서, 영향력이 큰 카테고리를 가려냄
+    category_impact = (
+        hourly_df.groupby("category")["imbalance"]
+        .apply(lambda s: s.abs().sum())
+        .sort_values(ascending=False)
+    )
+    # 상위 3개 카테고리만 강조, 나머지는 흐리게
+    highlighted_categories = set(category_impact.head(4).index)
+
     for category in CATEGORY_ORDER:
         data = hourly_df.loc[hourly_df["category"].eq(category)]
-        ax.plot(data["hour"], data["imbalance"], marker="o", linewidth=2, label=category)
+        if category in highlighted_categories: 
+            ax.plot(data["hour"], data["imbalance"], linewidth=2, alpha=1.0, label=category, zorder=3)
+        else:
+            ax.plot(data["hour"], data["imbalance"], linewidth=1.2, alpha=0.5, label=category, zorder=1)
     ax.axhline(0, color="#333333", linewidth=0.8)
     ax.set_xticks(range(24))
     ax.set_xlabel("\uc2dc\uac04\ub300")
