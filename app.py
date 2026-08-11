@@ -27,15 +27,6 @@ sns.set_theme(style="whitegrid", palette="deep")
 plt.rcParams["font.family"] = "Malgun Gothic"
 plt.rcParams["axes.unicode_minus"] = False
 
-st.title("서울 공공자전거 수요 불균형 분석")
-# st.caption("2025년 7월부터 2026년 6월까지의 대여소별 불균형과 2026년 4월 첫 주 이용 이력 분석")
-loading_skeleton = st.skeleton(height=220)
-
-# save_file.py에서 API 데이터를 CSV로 저장한 뒤, 여기서는 저장된 파일만 읽기
-rental_file_path = RAW_DATA_DIR / "SeoulBikeRental_20260401_7days.csv"
-raw_rental_df = load_csv(rental_file_path.name, data_dir=RAW_DATA_DIR)
-rental_df = preprocess_rental_data(raw_rental_df)
-save_processed_rental_data(rental_df, "SeoulBikeRental_20260401_7days_processed.csv")
 
 current_station_files = ["SeoulBikeStationUseInfo_2507to2512.csv", "SeoulBikeStationUseInfo_2601to2606.csv"]
 previous_station_files = ["SeoulBikeStationUseInfo_2407to2412.csv", "SeoulBikeStationUseInfo_2501to2506.csv"]
@@ -46,13 +37,49 @@ previous_monthly_imbalance = calculate_monthly_imbalance(previous_station_df)
 # 각 대여소의 월별 대여 건수(rent_cnt) 더하기
 current_monthly_rentals = current_station_df.groupby("stat_mn", as_index=False).agg(total_rentals=("rent_cnt", "sum"))
 previous_monthly_rentals = previous_station_df.groupby("stat_mn", as_index=False).agg(total_rentals=("rent_cnt", "sum"))
-monthly_top10 = current_monthly_imbalance.head(10)
+
+# 앱 최초 실행 시 한 번만 데이터를 로드해 session_state에 저장
+def load_all_data() -> None:
+    if "data_loaded" in st.session_state:
+        return
+
+    current_station_df = add_imbalance(clean_station_df(load_csv(current_station_files)))
+    previous_station_df = add_imbalance(clean_station_df(load_csv(previous_station_files)))
+
+    st.session_state["current_station_df"] = current_station_df
+    st.session_state["previous_station_df"] = previous_station_df
+    st.session_state["data_loaded"] = True
+
+load_all_data()
+
+st.title("서울 공공자전거 수요 불균형 분석")
+# st.caption("2025년 7월부터 2026년 6월까지의 대여소별 불균형과 2026년 4월 첫 주 이용 이력 분석")
+loading_skeleton = st.skeleton(height=220)
+
+# save_file.py에서 API 데이터를 CSV로 저장한 뒤, 여기서는 저장된 파일만 읽기
+rental_file_path = RAW_DATA_DIR / "SeoulBikeRental_20260401_7days.csv"
+# 데이터 읽어오기
+raw_rental_df = load_csv(rental_file_path.name, data_dir=RAW_DATA_DIR)
+# 데이터 전처리하기
+rental_df = preprocess_rental_data(raw_rental_df)
+# 전처리한 데이터 저장하기
+save_processed_rental_data(rental_df, "SeoulBikeRental_20260401_7days_processed.csv")
+
+
 loading_skeleton.empty()
+
+
+
 
 # 1. 월별 대여·반납 불균형 진단
 with st.container(border=True):
     st.header("1. 월별 대여·반납 불균형 진단")
     st.write("불균형 절대값 합계가 클수록 대여소별 대여·반납 차이가 커서 재배치 운영을 우선 검토해야 하는 달이라는 것을 유추 가능")
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("ㅁㄴㅇ", f"123123")
+    c2.metric("1234", f"123123")
+    c3.metric("ㅑㅐㅣㅐㅑ", f"123")
 
     st.subheader("절대값 불균형 합계")
     current_line_data = current_monthly_imbalance.sort_values("stat_mn").copy()
@@ -62,6 +89,7 @@ with st.container(border=True):
     month_labels = ["7월", "8월", "9월", "10월", "11월", "12월", "1월", "2월", "3월", "4월", "5월", "6월"]
     month_positions = list(range(len(month_labels)))
     average_rentals = (current_rental_line_data["total_rentals"].reset_index(drop=True) + previous_rental_line_data["total_rentals"].reset_index(drop=True)) / 2
+    
     fig, axis = plt.subplots(figsize=(10, 4))
 
     rental_axis = axis.twinx()
@@ -74,7 +102,6 @@ with st.container(border=True):
         label="전체 대여 건수 2년 평균",
         zorder=1,
     )
-    
     current_imbalance_line, = axis.plot(
         month_positions,
         current_line_data["imbalance_abs_sum"],
@@ -124,6 +151,17 @@ with st.container(border=True):
     )
     fig.subplots_adjust(top=0.82)
     st.pyplot(fig, clear_figure=True)
+
+
+
+
+with st.container(border=True):
+    st.header("1-1. 따릉이 불균형 지수")
+
+
+
+
+
 
 # 2. 이용 시간별 수요 분석
 with st.container(border=True):

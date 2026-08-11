@@ -7,7 +7,7 @@ def get_bike_rental_data(start_idx: int, end_idx: int, date: str, hour: int) -> 
     if not 0 <= hour <= 23:
         raise ValueError("hour must be between 0 and 23")
     url = f"{BIKE_RENTAL_DATA_URL}/{start_idx}/{end_idx}/{date}/{hour}"
-    response = requests.get(url, timeout=30)
+    response = requests.get(url)
     response.raise_for_status()
     payload = response.json()
     result = payload.get("rentData", {}).get("RESULT", {})

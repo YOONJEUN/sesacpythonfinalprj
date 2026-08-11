@@ -3,24 +3,24 @@ import pandas as pd
 import seaborn as sns
 
 
+import re
+from datetime import date
+import streamlit as st
+
+from src.data.preprocessing import preprocess_rental_data
+
 def calculate_monthly_imbalance(df: pd.DataFrame) -> pd.DataFrame:
-    """Rank months by the sum of station-level absolute imbalance."""
     return (df.groupby("stat_mn", as_index=False).agg(imbalance_abs_sum=("imbalance_abs", "sum"))
             .sort_values("imbalance_abs_sum", ascending=False))
 
-
 def make_group_statistics(df: pd.DataFrame) -> dict[str, pd.DataFrame]:
-    """Calculate demand, duration, and distance statistics for each time feature."""
     aggregations = {"trip_count": ("rent_id", "size"), "avg_use_min": ("use_min", "mean"),
                     "median_use_min": ("use_min", "median"), "avg_use_dst": ("use_dst", "mean")}
     return {feature: df.groupby(feature, as_index=False).agg(**aggregations)
             for feature in ("rent_year", "rent_month", "rent_day", "rent_hour")}
 
-
 def calculate_hourly_returns(df: pd.DataFrame) -> pd.DataFrame:
-    """Calculate the number of returns for each return hour."""
     return df.dropna(subset=["rtn_hour"]).groupby("rtn_hour", as_index=False).size().rename(columns={"size": "return_count"})
-
 
 def calculate_station_rebalancing(df: pd.DataFrame) -> pd.DataFrame:
     """Calculate station net flow and the absolute rebalancing priority.
@@ -37,11 +37,9 @@ def calculate_station_rebalancing(df: pd.DataFrame) -> pd.DataFrame:
     result["rebalancing_priority"] = result["net_outflow"].abs()
     return result.sort_values("rebalancing_priority", ascending=False)
 
-
 def calculate_top_routes(df: pd.DataFrame, n: int = 20) -> pd.DataFrame:
     return (df.groupby(["rent_nm", "rtn_nm"], as_index=False).size()
             .rename(columns={"size": "trip_count"}).nlargest(n, "trip_count"))
-
 
 def calculate_gender_mix(df: pd.DataFrame) -> pd.DataFrame:
     return df["sex_cd"].fillna("Unknown").value_counts().rename_axis("sex").reset_index(name="trip_count")
@@ -52,5 +50,10 @@ def create_bar_chart(data: pd.DataFrame, x: str, y: str, title: str, color: str 
     ax.set_title(title, fontweight="bold")
     fig.tight_layout()
     return fig
+
+# ====================================================================================================================================
+# ====================================================================================================================================
+# ====================================================================================================================================
+# ====================================================================================================================================
 
 

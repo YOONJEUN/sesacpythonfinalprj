@@ -46,3 +46,29 @@ def preprocess_rental_data(df: pd.DataFrame) -> pd.DataFrame:
     result["rtn_hour"] = result["rtn_dt"].dt.hour
     
     return result.dropna(subset=["rent_dt", "rent_id", "rtn_id", "use_min", "use_dst"]).reset_index(drop=True)
+
+
+
+
+STATION_LOCATION_COLUMN_MAP = {
+    "대여소_ID": "station_id",
+    "주소1": "addr1",
+    "주소2": "addr2",
+    "위도": "lat",
+    "경도": "lon",
+}
+
+def preprocess_station_location(df: pd.DataFrame) -> pd.DataFrame:
+    """대여소 위치 데이터의 컬럼명을 정리하고 결측치를 제거해, 지도/join에 바로 쓸 수 있는 형태로 만듭니다."""
+    result = df.rename(columns=STATION_LOCATION_COLUMN_MAP).copy()
+
+    result["lat"] = pd.to_numeric(result["lat"], errors="coerce")
+    result["lon"] = pd.to_numeric(result["lon"], errors="coerce")
+    result["station_id"] = result["station_id"].astype(str).str.strip()
+
+    result = result.dropna(subset=["station_id", "lat", "lon"])
+    result = result[
+        result["lat"].between(37.0, 38.0) & result["lon"].between(126.0, 128.0)
+    ]
+
+    return result.drop_duplicates(subset="station_id").reset_index(drop=True)
