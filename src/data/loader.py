@@ -11,9 +11,20 @@ PROCESSED_DATA_DIR = PROJECT_ROOT / "data" / "processed"
 
 
 def load_csv(filenames: str | list[str], data_dir: Path = RAW_DATA_DIR) -> pd.DataFrame:
-    """Read one or more UTF-8-sig CSV files from the selected directory."""
+    """Read one or more CSV files, supporting common Korean CSV encodings."""
     names = [filenames] if isinstance(filenames, str) else filenames
-    return pd.concat([pd.read_csv(data_dir / name, encoding="utf-8-sig") for name in names], ignore_index=True)
+    frames = []
+    for name in names:
+        path = data_dir / name
+        for encoding in ("utf-8-sig", "cp949"):
+            try:
+                frames.append(pd.read_csv(path, encoding=encoding))
+                break
+            except UnicodeDecodeError:
+                continue
+        else:
+            raise UnicodeError(f"Unsupported CSV encoding: {path}")
+    return pd.concat(frames, ignore_index=True)
 
 
 def load_json(filename: str, data_dir: Path = RAW_DATA_DIR) -> pd.DataFrame:

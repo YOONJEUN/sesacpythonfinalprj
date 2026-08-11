@@ -1,12 +1,9 @@
-"""Seoul Open API clients."""
-
 import requests
 
 from config.settings import BIKE_RENTAL_DATA_URL, BIKE_STATION_USE_INFO_URL
 
 
 def get_bike_rental_data(start_idx: int, end_idx: int, date: str, hour: int) -> dict:
-    """Fetch one hour of rental-history records."""
     if not 0 <= hour <= 23:
         raise ValueError("hour must be between 0 and 23")
     url = f"{BIKE_RENTAL_DATA_URL}/{start_idx}/{end_idx}/{date}/{hour}"

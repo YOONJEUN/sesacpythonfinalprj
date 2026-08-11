@@ -1,12 +1,14 @@
-"""Data cleaning and derived-variable functions."""
-
 import pandas as pd
 
-COLUMN_MAP = {"자치구": "district", "대여소명": "station_name", "기준년월": "stat_mn", "대여건수": "rent_cnt", "반납건수": "rtn_cnt"}
-
+COLUMN_MAP = {
+    "자치구": "district", 
+    "대여소명": "station_name", 
+    "기준년월": "stat_mn", 
+    "대여건수": "rent_cnt", 
+    "반납건수": "rtn_cnt"
+}
 
 def clean_station_df(df: pd.DataFrame) -> pd.DataFrame:
-    """Standardize the monthly station-use source columns and values."""
     result = df.rename(columns=COLUMN_MAP).copy()
     required = set(COLUMN_MAP.values())
     missing = required.difference(result.columns)
@@ -22,23 +24,25 @@ def clean_station_df(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def add_imbalance(df: pd.DataFrame) -> pd.DataFrame:
-    """Add signed and absolute rental/return imbalance fields."""
     result = df.copy()
     result["imbalance"] = result["rent_cnt"] - result["rtn_cnt"]
     result["imbalance_abs"] = result["imbalance"].abs()
     return result
 
-
 def preprocess_rental_data(df: pd.DataFrame) -> pd.DataFrame:
-    """Clean rental history and derive rental year, month, day, and hour."""
     result = df.copy()
-    result["rent_dt"] = pd.to_datetime(result["RENT_DT"], errors="coerce")
-    result["rtn_dt"] = pd.to_datetime(result["RTN_DT"], errors="coerce")
+
+    result.columns = [col.lower() for col in result.columns]
+
+    result["rent_dt"] = pd.to_datetime(result["rent_dt"], errors="coerce")
+    result["rtn_dt"] = pd.to_datetime(result["rtn_dt"], errors="coerce")
+    result["use_min"] = pd.to_numeric(result["use_min"], errors="coerce")
+    result["use_dst"] = pd.to_numeric(result["use_dst"], errors="coerce")
+
     result["rent_year"] = result["rent_dt"].dt.year
     result["rent_month"] = result["rent_dt"].dt.month
     result["rent_day"] = result["rent_dt"].dt.day
     result["rent_hour"] = result["rent_dt"].dt.hour
     result["rtn_hour"] = result["rtn_dt"].dt.hour
-    result["use_min"] = pd.to_numeric(result["USE_MIN"], errors="coerce")
-    result["use_dst"] = pd.to_numeric(result["USE_DST"], errors="coerce")
-    return result.dropna(subset=["rent_dt", "RENT_ID", "RTN_ID", "use_min", "use_dst"]).reset_index(drop=True)
+    
+    return result.dropna(subset=["rent_dt", "rent_id", "rtn_id", "use_min", "use_dst"]).reset_index(drop=True)

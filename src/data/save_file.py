@@ -8,12 +8,12 @@ import pandas as pd
 from src.api.bike_api import get_bike_rental_data
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+RAW_DATA_DIR = PROJECT_ROOT / "data" / "raw"
 PROCESSED_DATA_DIR = PROJECT_ROOT / "data" / "processed"
 RENTAL_COLUMNS = ["RENT_DT", "RENT_ID", "RENT_NM", "RTN_DT", "RTN_ID", "RTN_NM", "USE_MIN", "USE_DST", "SEX_CD"]
 
 
 def save_rental_week(start_date: str = "2026-04-01", days: int = 7, page_size: int = 1000) -> Path:
-    """Fetch a requested week from the API and save only RENTAL_COLUMNS to CSV."""
     if days < 1:
         raise ValueError("days must be at least 1")
     first_day = date.fromisoformat(start_date)
@@ -29,7 +29,16 @@ def save_rental_week(start_date: str = "2026-04-01", days: int = 7, page_size: i
                 if len(rows) < page_size:
                     break
                 start += page_size
-    PROCESSED_DATA_DIR.mkdir(parents=True, exist_ok=True)
-    path = PROCESSED_DATA_DIR / f"SeoulBikeRental_{first_day:%Y%m%d}_{days}days.csv"
+    RAW_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    path = RAW_DATA_DIR / f"SeoulBikeRental_{first_day:%Y%m%d}_{days}days.csv"
     pd.DataFrame(records, columns=RENTAL_COLUMNS).to_csv(path, index=False, encoding="utf-8-sig")
-    return path
+    # return path
+
+def save_processed_rental_data(df : pd.DataFrame, filename : str) -> Path:
+    PROCESSED_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    path = PROCESSED_DATA_DIR / filename
+    df.to_csv(path, index=False, encoding="utf-8-sig")
+    # return path
+
+if __name__ == "__main__": 
+    save_rental_week(start_date="2026-04-01", days=7)
