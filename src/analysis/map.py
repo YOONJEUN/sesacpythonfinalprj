@@ -8,6 +8,62 @@ from folium import folium
 from streamlit_folium import st_folium
 
 import folium
+
+
+def render_commute_priority_map(priority_df: pd.DataFrame, station_location_df: pd.DataFrame, top_n: int = 15) -> None:
+    """Render high-priority commute stations for delivery and collection planning."""
+    priority_data = priority_df.head(top_n).copy()
+    priority_data["location_station_id"] = "ST-" + pd.to_numeric(
+        priority_data["station_id"], errors="coerce"
+    ).astype("Int64").astype("string")
+    locations = station_location_df.copy()
+    locations["station_id"] = locations["station_id"].astype("string")
+    map_data = priority_data.merge(
+        locations[["station_id", "lat", "lon"]],
+        left_on="location_station_id",
+        right_on="station_id",
+        how="inner",
+    ).dropna(subset=["lat", "lon"])
+    if map_data.empty:
+        st.warning("우선 대여소의 위치 정보를 찾을 수 없습니다.")
+        return
+
+    station_map = folium.Map(
+        location=[map_data["lat"].mean(), map_data["lon"].mean()],
+        zoom_start=11,
+        tiles="CartoDB positron",
+    )
+    max_priority = max(1, map_data["commute_priority"].max())
+    for _, row in map_data.iterrows():
+        needs_supply = row["net_imbalance"] >= 0
+        color = "#C9534B" if needs_supply else "#356FA8"
+        action = "자전거 공급 우선" if needs_supply else "자전거 회수 우선"
+        folium.CircleMarker(
+            location=[row["lat"], row["lon"]],
+            radius=6 + 16 * row["commute_priority"] / max_priority,
+            color=color,
+            weight=1,
+            fill=True,
+            fill_color=color,
+            fill_opacity=0.72,
+            tooltip=(
+                f"{row['priority_rank']}위 | {row['station_name']}<br>"
+                f"{row['category']} | {action}<br>"
+                f"오전: {row['morning_imbalance']:+,.0f} / 오후: {row['evening_imbalance']:+,.0f}<br>"
+            ),
+        ).add_to(station_map)
+
+    legend_html = """
+    <div style='position: fixed; bottom: 25px; left: 25px; z-index: 1000;
+                background: white; border: 1px solid #999; border-radius: 4px; padding: 10px;'>
+      <b>출퇴근 재배치 우선순위</b><br>
+      <span style='color:#C9534B;'>●</span> 자전거 공급 우선<br>
+      <span style='color:#356FA8;'>●</span> 자전거 회수 우선<br>
+      원이 클수록 우선순위가 높음
+    </div>
+    """
+    station_map.get_root().html.add_child(folium.Element(legend_html))
+    st_folium(station_map, height=620, use_container_width=True, returned_objects=[])
 def render_station_map(station_location_df: pd.DataFrame) -> None:
     st.subheader("따릉이 대여소 위치")
 

@@ -47,6 +47,140 @@ def calculate_daily_station_hourly_imbalance(
     hourly["imbalance"] = hourly["rentals"] - hourly["returns"]
     return str(station_name), station_id, hourly
 
+
+def calculate_weekly_average_station_hourly_imbalance(
+    rental_df: pd.DataFrame,
+    start_date: str = "2026-04-01",
+    end_date: str = "2026-04-07",
+) -> pd.DataFrame:
+    """Calculate the hourly mean station imbalance across a date range.
+
+    Station-hour combinations without trips are included as zero so that the
+    result represents the average across all stations and all seven days.
+    """
+    start = pd.Timestamp(start_date).normalize()
+    end = pd.Timestamp(end_date).normalize()
+
+    rental_mask = rental_df["rent_dt"].dt.normalize().between(start, end)
+    return_mask = rental_df["rtn_dt"].dt.normalize().between(start, end)
+    rentals = (
+        rental_df.loc[rental_mask]
+        .assign(date=lambda df: df["rent_dt"].dt.normalize())
+        .groupby(["date", "rent_id", "rent_hour"])
+        .size()
+        .rename("rentals")
+        .reset_index()
+        .rename(columns={"rent_id": "station_id", "rent_hour": "hour"})
+    )
+    returns = (
+        rental_df.loc[return_mask]
+        .assign(date=lambda df: df["rtn_dt"].dt.normalize())
+        .groupby(["date", "rtn_id", "rtn_hour"])
+        .size()
+        .rename("returns")
+        .reset_index()
+        .rename(columns={"rtn_id": "station_id", "rtn_hour": "hour"})
+    )
+    station_ids = pd.Index(pd.concat([rentals["station_id"], returns["station_id"]]).dropna().unique())
+    if station_ids.empty:
+        return pd.DataFrame({"hour": range(24), "average_imbalance": [0.0] * 24})
+
+    index = pd.MultiIndex.from_product(
+        [pd.date_range(start, end, freq="D"), station_ids, range(24)],
+        names=["date", "station_id", "hour"],
+    )
+    station_hourly = (
+        pd.merge(rentals, returns, on=["date", "station_id", "hour"], how="outer")
+        .set_index(["date", "station_id", "hour"])
+        .reindex(index, fill_value=0)
+        .fillna(0)
+        .reset_index()
+    )
+    station_hourly["imbalance"] = station_hourly["rentals"] - station_hourly["returns"]
+    return (
+        station_hourly.groupby("hour", as_index=False)
+        .agg(
+            average_imbalance=("imbalance", "mean"),
+            average_absolute_imbalance=("imbalance", lambda values: values.abs().mean()),
+        )
+    )
+
+
+def calculate_average_station_imbalance_by_bins(
+    rental_df: pd.DataFrame,
+    feature: str,
+    bins: list[float],
+    labels: list[str],
+) -> pd.DataFrame:
+    """Calculate average station rental-minus-return imbalance for feature bins."""
+    data = rental_df.dropna(subset=[feature]).copy()
+    data["feature_group"] = pd.cut(
+        data[feature], bins=bins, labels=labels, include_lowest=True, right=False
+    )
+    data = data.dropna(subset=["feature_group"])
+    rentals = (
+        data.groupby(["feature_group", "rent_id"], observed=False)
+        .size()
+        .rename("rentals")
+        .reset_index()
+        .rename(columns={"rent_id": "station_id"})
+    )
+    returns = (
+        data.groupby(["feature_group", "rtn_id"], observed=False)
+        .size()
+        .rename("returns")
+        .reset_index()
+        .rename(columns={"rtn_id": "station_id"})
+    )
+    station_imbalance = pd.merge(
+        rentals, returns, on=["feature_group", "station_id"], how="outer"
+    ).fillna({"rentals": 0, "returns": 0})
+    station_imbalance["imbalance"] = station_imbalance["rentals"] - station_imbalance["returns"]
+    result = (
+        station_imbalance.groupby("feature_group", observed=False, as_index=False)
+        .agg(
+            average_imbalance=("imbalance", "mean"),
+            average_absolute_imbalance=("imbalance", lambda values: values.abs().mean()),
+        )
+    )
+    return result.dropna(subset=["average_imbalance"])
+
+
+def calculate_weekday_hourly_imbalance(rental_df: pd.DataFrame) -> pd.DataFrame:
+    """Calculate rental-minus-return imbalance for every weekday and hour."""
+    rentals = (
+        rental_df.assign(weekday=lambda df: df["rent_dt"].dt.dayofweek)
+        .groupby(["weekday", "rent_hour"])
+        .size()
+        .rename("rentals")
+    )
+    returns = (
+        rental_df.dropna(subset=["rtn_hour"])
+        .assign(weekday=lambda df: df["rtn_dt"].dt.dayofweek)
+        .groupby(["weekday", "rtn_hour"])
+        .size()
+        .rename("returns")
+    )
+    index = pd.MultiIndex.from_product([range(7), range(24)], names=["weekday", "hour"])
+    result = pd.concat([rentals, returns], axis=1).reindex(index, fill_value=0).fillna(0).reset_index()
+    result["imbalance"] = result["rentals"] - result["returns"]
+    return result
+
+
+def calculate_weektype_hourly_average_imbalance(weekday_hourly_df: pd.DataFrame) -> pd.DataFrame:
+    """Average weekday-hour imbalance into weekday (Mon-Fri) and weekend groups."""
+    result = weekday_hourly_df.copy()
+    result["day_type"] = result["weekday"].lt(5).map({True: "평일 (월~금)", False: "주말 (토~일)"})
+    return (
+        result.groupby(["day_type", "hour"], as_index=False)
+        .agg(
+            average_rentals=("rentals", "mean"),
+            average_returns=("returns", "mean"),
+            average_imbalance=("imbalance", "mean"),
+        )
+    )
+
+
 def make_group_statistics(df: pd.DataFrame) -> dict[str, pd.DataFrame]:
     aggregations = {"trip_count": ("rent_id", "size"), "avg_use_min": ("use_min", "mean"),
                     "median_use_min": ("use_min", "median"), "avg_use_dst": ("use_dst", "mean")}
