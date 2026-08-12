@@ -589,7 +589,6 @@ with st.container(border=True):
                     "recommended_action": "권장 조치",
                 },
                 hide_index=True,
-                width=True,
             )
 
     render_commute_priority_chart()
