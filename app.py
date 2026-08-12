@@ -36,7 +36,7 @@ from src.data.save_file import save_processed_data
 
 st.set_page_config(page_title="서울 공공자전거 수요 불균형 분석", layout="wide", page_icon="🚲")
 sns.set_theme(style="whitegrid", palette="deep")
-plt.rcParams["font.family"] = "Malgun Gothic"
+plt.rcParams["font.family"] = "NanumGothic"
 plt.rcParams["axes.unicode_minus"] = False
 
 
