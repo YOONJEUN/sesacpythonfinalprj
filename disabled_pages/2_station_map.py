@@ -1,3 +1,4 @@
+# Disabled Streamlit page: retained as source only. Move it back under `pages/` to re-enable.
 import pandas as pd
 import streamlit as st
 
