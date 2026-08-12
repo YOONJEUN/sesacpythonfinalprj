@@ -317,7 +317,6 @@ def create_commute_priority_bar_chart(
     ax.set_xlabel("재배치 우선순위")
     ax.set_ylabel("", rotation=70)
     ax.set_title(f"재배치 우선순위 상위 {top_n}개 대여소")
-
     ax.grid(axis="x", alpha=0.25)
 
     fig.tight_layout()
