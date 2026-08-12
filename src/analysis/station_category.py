@@ -9,6 +9,19 @@ CATEGORY_ORDER = [
 ]
 COMMUTE_CATEGORIES = ["지하철/버스", "주거지", "회사"]
 
+# 필터로 일부 유형을 숨겨도 각 대여소 유형의 그래프 색상은 항상 동일하게 유지합니다.
+CATEGORY_COLORS = {
+    "지하철/버스": "#356FA8",
+    "주거지": "#D9873D",
+    "기타": "#7A5AA6",
+    "공공기관": "#4B9B70",
+    "회사": "#C9534B",
+    "공원": "#5F9EA0",
+    "초중고": "#B8860B",
+    "대학교": "#6A5ACD",
+    "문화시설": "#A0522D",
+}
+
 PATTERNS = [
     ("지하철/버스", r"역|버스|정류장|터미널|공항|교통|환승"),
     ("대학교", r"대학교|대학|캠퍼스|대학원"),
@@ -56,19 +69,27 @@ def create_hourly_category_imbalance_chart(
     filtered_df = hourly_df.loc[hourly_df["category"].isin(categories)]
     category_impact = filtered_df.groupby("category")["imbalance"].apply(lambda values: values.abs().sum())
     highlighted = set(category_impact.nlargest(4).index)
+
+    # 필터와 무관하게 전체 유형의 최대 절댓값으로 y축 범위를 고정합니다.
+    # 따라서 일부 유형을 해제해도 그래프의 세로 크기와 비교 기준이 유지됩니다.
+    max_abs_imbalance = hourly_df["imbalance"].abs().max()
+    y_limit = max(1, max_abs_imbalance * 1.1)
+
     for category in categories:
         data = filtered_df.loc[filtered_df["category"].eq(category)]
         ax.plot(
             data["hour"], data["imbalance"], label=category,
+            color=CATEGORY_COLORS.get(category, "#666666"),
             linewidth=2 if category in highlighted else 1.2,
             alpha=1 if category in highlighted else 0.5,
         )
     ax.axhline(0, color="#333333", linewidth=0.8)
+    ax.set_ylim(-y_limit, y_limit)
     ax.axvspan(7, 9, color="#E8EEF5", alpha=0.6, label="출근 시간대")
     ax.axvspan(17, 19, color="#F9E9DB", alpha=0.6, label="퇴근 시간대")
     ax.set_xticks(range(24))
     ax.set_xlabel("시간대")
-    ax.set_ylabel("불균형 수치 (대여 건수 - 반납 건수)")
+    ax.set_ylabel("불균형 수치")
     ax.set_title("대여소 유형별 시간대 불균형 추이 (2026년 4월 1일~7일)")
     ax.grid(axis="y", alpha=0.3)
     ax.legend(title="대여소 유형", ncol=3, loc="upper center", bbox_to_anchor=(0.5, -0.15))
@@ -125,8 +146,8 @@ def create_commute_priority_bubble_chart(priority_df: pd.DataFrame, top_n: int =
         ax.annotate(str(row["station_name"]), (row["morning_imbalance"], row["evening_imbalance"]), xytext=(5, 5), textcoords="offset points", fontsize=8)
     ax.axhline(0, color="#666666", linewidth=0.8)
     ax.axvline(0, color="#666666", linewidth=0.8)
-    ax.set_xlabel("오전 출근 불균형 (07~09시, 대여 - 반납)")
-    ax.set_ylabel("오후 퇴근 불균형 (17~19시, 대여 - 반납)")
+    ax.set_xlabel("출근 시간대 불균형")
+    ax.set_ylabel("퇴근 시간대 불균형")
     ax.set_title("출퇴근 불균형 패턴")
     handles = [plt.Line2D([], [], marker="o", linestyle="", color=color, label=category) for category, color in {"지하철/버스": "#356FA8", "주거지": "#4B9B70", "회사": "#D9873D"}.items()]
     ax.legend(handles=handles, title="대여소 유형", loc="best")

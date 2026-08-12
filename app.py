@@ -93,6 +93,35 @@ rental_df["rtn_dt"] = pd.to_datetime(rental_df["rtn_dt"], errors="coerce")
 
 loading_skeleton.empty()
 
+# 3번 그래프와 상단 KPI에서 공통으로 사용할 대여소 유형별 시간대 불균형 데이터를 미리 계산합니다.
+categorized_rentals = add_station_categories(rental_df)
+output_filename = "SeoulBikeRental_20260401_7days_station_categories.csv"
+output_path = PROCESSED_DATA_DIR / output_filename
+if not output_path.exists():
+    save_processed_data(categorized_rentals, output_filename)
+hourly_category_imbalance = calculate_hourly_category_imbalance(categorized_rentals)
+
+# 대여소 유형·시간대 중 대여와 반납 차이가 가장 큰 지점을 찾습니다.
+peak_imbalance = hourly_category_imbalance.loc[
+    hourly_category_imbalance["imbalance"].abs().idxmax()
+]
+# 하루 전체 시간대의 불균형 절댓값 합으로 재배치 우선 유형을 계산합니다.
+category_priority = (
+    hourly_category_imbalance.groupby("category")["imbalance"]
+    .apply(lambda values: values.abs().sum())
+    .idxmax()
+)
+# 출퇴근 시간대(07~09시, 17~19시) 중 최대 불균형 지점을 계산합니다.
+commute_peak = hourly_category_imbalance.loc[
+    hourly_category_imbalance["hour"].isin([7, 8, 9, 17, 18, 19])
+].loc[lambda data: data["imbalance"].abs().idxmax()]
+
+# 대시보드 최상단 KPI 카드: 3번 유형별 시간대 불균형 그래프의 핵심 수치를 요약합니다.
+kpi1, kpi2, kpi3 = st.columns(3)
+kpi1.metric("최대 절대 불균형", f"{abs(peak_imbalance['imbalance']):,.0f}건", f"{peak_imbalance['category']} · {peak_imbalance['hour']}시")
+kpi2.metric("재배치 우선 유형", category_priority, "시간대별 불균형 절댓값 합계 기준")
+kpi3.metric("출퇴근 최대 불균형", f"{abs(commute_peak['imbalance']):,.0f}건", f"{commute_peak['category']} · {commute_peak['hour']}시")
+
 
 # 체크박스 변경 시 이 함수 내부만 다시 실행해, 대시보드 전체 새로고침을 방지합니다.
 @st.fragment
@@ -118,7 +147,6 @@ def render_monthly_imbalance_diagnosis() -> None:
         with filter_column:
             with st.container(border=True):
                 st.markdown("##### 필터링 조건")
-                st.caption("그래프에 표시할 비교 기간을 선택하세요.")
 
                 # 체크된 기간만 그래프 선과 범례에 표시합니다.
                 selected_periods = [
@@ -165,7 +193,7 @@ def render_monthly_imbalance_diagnosis() -> None:
             rental_axis.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, pos: f"{x / 10000:,.0f}만"))
             rental_axis.set_ylabel("전체 대여 건수 (만 건)")
             rental_axis.tick_params(axis="y", labelcolor="#4B9B70")
-            axis.legend([average_rental_bars, *imbalance_lines], ["선택 기간 전체 대여 건수 평균", *selected_periods], loc="upper left", bbox_to_anchor=(0.28, 1.02))
+            axis.legend([average_rental_bars, *imbalance_lines], ["전체 대여 건수 평균", *selected_periods], loc="upper left", bbox_to_anchor=(0.28, 1.02))
             fig.subplots_adjust(top=0.82)
             st.pyplot(fig, clear_figure=True)
 
@@ -339,13 +367,6 @@ with st.container(border=True):
 with st.container(border=True):
     st.header("3. 대여소 유형별 시간대 불균형")
 
-    categorized_rentals = add_station_categories(rental_df)
-    output_filename = "SeoulBikeRental_20260401_7days_station_categories.csv"
-    output_path = PROCESSED_DATA_DIR / output_filename
-    if not output_path.exists():
-        save_processed_data(categorized_rentals, output_filename)
-
-    hourly_category_imbalance = calculate_hourly_category_imbalance(categorized_rentals)
     category_options = hourly_category_imbalance["category"].drop_duplicates().tolist()
 
     # '전체' 체크박스 변경 시 모든 대여소 유형 체크박스 상태를 함께 변경합니다.
@@ -456,26 +477,3 @@ with st.container(border=True):
             )
 
     render_commute_priority_chart()
-
-    '''
-    top_station_count = st.slider("표시할 상위 대여소 수", min_value=10, max_value=30, value=15, step=5)
-
-    st.pyplot(create_commute_priority_bubble_chart(commute_priority, top_station_count), clear_figure=True)
-
-    st.dataframe(
-        commute_priority.head(top_station_count),
-        column_config={
-            "priority_rank": "우선순위",
-            "station_id": "대여소 ID",
-            "station_name": "대여소명",
-            "category": "유형",
-            "morning_imbalance": "오전 불균형",
-            "evening_imbalance": "오후 불균형",
-            "commute_priority": "재배치 우선순위",
-            "net_imbalance": "순불균형",
-            "recommended_action": "권장 조치",
-        },
-        hide_index=True,
-        use_container_width=True,
-    )
-    '''
