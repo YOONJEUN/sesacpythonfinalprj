@@ -532,13 +532,6 @@ with st.container(border=True):
 
     render_hourly_category_imbalance_chart()
 
-    # st.subheader("유형별 요약")
-    # category_summary = hourly_category_imbalance.groupby("category", as_index=False).agg(
-    #     total_imbalance=("imbalance", "sum"),
-    #     hourly_peak_abs_imbalance=("imbalance", lambda values: values.abs().max()),
-    # )
-    # st.dataframe(category_summary, hide_index=True, use_container_width=True)
-
 
 # 4. 출퇴근 시간대 재배치 우선순위
 with st.container(border=True):
@@ -596,7 +589,7 @@ with st.container(border=True):
                     "recommended_action": "권장 조치",
                 },
                 hide_index=True,
-                use_container_width=True,
+                width=True,
             )
 
     render_commute_priority_chart()
