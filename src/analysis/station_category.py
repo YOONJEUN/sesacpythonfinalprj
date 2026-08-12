@@ -46,12 +46,18 @@ def calculate_hourly_category_imbalance(categorized_df: pd.DataFrame) -> pd.Data
     return result
 
 
-def create_hourly_category_imbalance_chart(hourly_df: pd.DataFrame) -> plt.Figure:
+def create_hourly_category_imbalance_chart(
+    hourly_df: pd.DataFrame,
+    selected_categories: list[str] | None = None,
+) -> plt.Figure:
+    """선택한 대여소 유형만 시간대별 불균형 그래프에 표시합니다."""
     fig, ax = plt.subplots(figsize=(13, 6))
-    category_impact = hourly_df.groupby("category")["imbalance"].apply(lambda values: values.abs().sum())
+    categories = selected_categories or CATEGORY_ORDER
+    filtered_df = hourly_df.loc[hourly_df["category"].isin(categories)]
+    category_impact = filtered_df.groupby("category")["imbalance"].apply(lambda values: values.abs().sum())
     highlighted = set(category_impact.nlargest(4).index)
-    for category in CATEGORY_ORDER:
-        data = hourly_df.loc[hourly_df["category"].eq(category)]
+    for category in categories:
+        data = filtered_df.loc[filtered_df["category"].eq(category)]
         ax.plot(
             data["hour"], data["imbalance"], label=category,
             linewidth=2 if category in highlighted else 1.2,

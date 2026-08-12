@@ -346,7 +346,58 @@ with st.container(border=True):
         save_processed_data(categorized_rentals, output_filename)
 
     hourly_category_imbalance = calculate_hourly_category_imbalance(categorized_rentals)
-    st.pyplot(create_hourly_category_imbalance_chart(hourly_category_imbalance), clear_figure=True)
+    category_options = hourly_category_imbalance["category"].drop_duplicates().tolist()
+
+    # '전체' 체크박스 변경 시 모든 대여소 유형 체크박스 상태를 함께 변경합니다.
+    def toggle_all_station_categories() -> None:
+        select_all = st.session_state["station_category_all"]
+        for category in category_options:
+            st.session_state[f"station_category_{category}"] = select_all
+
+    # 개별 유형을 조절하면 '전체' 체크박스 상태도 현재 선택 결과에 맞춰 갱신합니다.
+    def sync_all_station_categories() -> None:
+        st.session_state["station_category_all"] = all(
+            st.session_state.get(f"station_category_{category}", True)
+            for category in category_options
+        )
+
+    # 3번 그래프의 체크박스와 차트를 fragment로 분리해, 유형 필터 변경 시 이 영역만 갱신합니다.
+    @st.fragment
+    def render_hourly_category_imbalance_chart() -> None:
+        filter_column, chart_column = st.columns([2, 8], vertical_alignment="center")
+        with filter_column:
+            with st.container(border=True):
+                st.markdown("##### 필터링 조건")
+                st.checkbox(
+                    "전체",
+                    value=True,
+                    key="station_category_all",
+                    on_change=toggle_all_station_categories,
+                )
+                selected_categories = [
+                    category
+                    for category in category_options
+                    if st.checkbox(
+                        category,
+                        value=True,
+                        key=f"station_category_{category}",
+                        on_change=sync_all_station_categories,
+                    )
+                ]
+
+        with chart_column:
+            if not selected_categories:
+                st.info("왼쪽에서 표시할 대여소 유형을 하나 이상 선택해주세요.")
+            else:
+                st.pyplot(
+                    create_hourly_category_imbalance_chart(
+                        hourly_category_imbalance,
+                        selected_categories,
+                    ),
+                    clear_figure=True,
+                )
+
+    render_hourly_category_imbalance_chart()
 
     # st.subheader("유형별 요약")
     # category_summary = hourly_category_imbalance.groupby("category", as_index=False).agg(
@@ -365,6 +416,48 @@ with st.container(border=True):
     )
 
     commute_priority, _ = calculate_commute_station_priorities(categorized_rentals)
+
+    # 4번 그래프의 필터와 결과를 fragment로 묶어, 필터 변경 시 이 영역만 갱신합니다.
+    @st.fragment
+    def render_commute_priority_chart() -> None:
+        filter_column, chart_column = st.columns([2, 8], vertical_alignment="top")
+        with filter_column:
+            with st.container(border=True):
+                st.markdown("##### 필터링 조건")
+                top_station_count = st.slider(
+                    "표시할 상위 대여소 수",
+                    min_value=10,
+                    max_value=30,
+                    value=15,
+                    step=5,
+                    key="commute_priority_top_station_count",
+                )
+
+        with chart_column:
+            st.pyplot(
+                create_commute_priority_bubble_chart(commute_priority, top_station_count),
+                clear_figure=True,
+            )
+            st.dataframe(
+                commute_priority.head(top_station_count),
+                column_config={
+                    "priority_rank": "우선순위",
+                    "station_id": "대여소 ID",
+                    "station_name": "대여소명",
+                    "category": "유형",
+                    "morning_imbalance": "오전 불균형",
+                    "evening_imbalance": "오후 불균형",
+                    "commute_priority": "재배치 우선순위",
+                    "net_imbalance": "순불균형",
+                    "recommended_action": "권장 조치",
+                },
+                hide_index=True,
+                use_container_width=True,
+            )
+
+    render_commute_priority_chart()
+
+    '''
     top_station_count = st.slider("표시할 상위 대여소 수", min_value=10, max_value=30, value=15, step=5)
 
     st.pyplot(create_commute_priority_bubble_chart(commute_priority, top_station_count), clear_figure=True)
@@ -385,3 +478,4 @@ with st.container(border=True):
         hide_index=True,
         use_container_width=True,
     )
+    '''
