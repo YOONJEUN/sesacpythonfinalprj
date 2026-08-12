@@ -89,10 +89,11 @@ def create_hourly_category_imbalance_chart(
     ax.axvspan(17, 19, color="#F9E9DB", alpha=0.6, label="퇴근 시간대")
     ax.set_xticks(range(24))
     ax.set_xlabel("시간대")
-    ax.set_ylabel("불균형 수치")
-    ax.set_title("대여소 유형별 시간대 불균형 추이 (2026년 4월 1일~7일)")
+    ax.set_ylabel("불균형 수치", rotation=0, labelpad=10)
+    ax.yaxis.set_label_coords(-0.03, 1.02)
+    ax.tick_params(axis="y", labelrotation=0)
     ax.grid(axis="y", alpha=0.3)
-    ax.legend(title="대여소 유형", ncol=3, loc="upper center", bbox_to_anchor=(0.5, -0.15))
+    ax.legend(title="대여소 유형", ncol=3, loc="upper center", bbox_to_anchor=(0.8, -0.15))
     fig.tight_layout()
     return fig
 
