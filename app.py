@@ -99,7 +99,7 @@ def load_csv_from_hf(filename: str) -> pd.DataFrame:
 
 
 rental_df = load_csv_from_hf("SeoulBikeRental_20260401_7days_processed.csv")
-
+station_df = load_csv_from_hf("SeoulBikeRental_20260401_7days_station_categories.csv")
 
 rental_df["rent_dt"] = pd.to_datetime(rental_df["rent_dt"], errors="coerce")
 rental_df["rtn_dt"] = pd.to_datetime(rental_df["rtn_dt"], errors="coerce")
