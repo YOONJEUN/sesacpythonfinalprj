@@ -35,6 +35,18 @@ from src.data.preprocessing import add_imbalance, clean_station_df, preprocess_r
 from src.data.save_file import save_processed_data
 
 st.set_page_config(page_title="서울 공공자전거 수요 불균형 분석", layout="wide", page_icon="🚲")
+st.markdown("""
+<style>
+    .block-container {
+        max-width: 100%;
+        padding-top: 2rem;
+        padding-left: 3rem;
+        padding-right: 3rem;
+        padding-bottom: 2rem;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 sns.set_theme(style="whitegrid", palette="deep")
 
 plt.rcParams["font.family"] = "NanumGothic"
