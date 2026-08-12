@@ -31,3 +31,10 @@ def load_json(filename: str, data_dir: Path = RAW_DATA_DIR) -> pd.DataFrame:
     """Read a JSON file from the selected directory into a DataFrame."""
     with (data_dir / filename).open("r", encoding="utf-8") as file:
         return pd.DataFrame(json.load(file))
+
+
+
+
+def load_parquet(filename: str, data_dir: Path) -> pd.DataFrame:
+    """저장된 parquet 파일을 로드합니다."""
+    return pd.read_parquet(data_dir / filename)

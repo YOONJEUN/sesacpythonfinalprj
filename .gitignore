@@ -11,6 +11,8 @@ wheels/
 
 # 환경변수 및 인증키
 .env
-data/processed
+# data/processed
 .streamlit/secrets.toml
 data/raw/SeoulBikeRental_20260401_7days.csv
+data/processed/SeoulBikeRental_20260401_7days_processed.csv
+data/processed/SeoulBikeRental_20260401_7days_station_categories.csv

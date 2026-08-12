@@ -29,13 +29,14 @@ from src.analysis.station_category import (
     create_hourly_category_imbalance_chart,
 )
 from src.api.openai_api import generate_monthly_imbalance_insight
-from src.data.loader import RAW_DATA_DIR, PROCESSED_DATA_DIR, load_csv
+from src.data.loader import RAW_DATA_DIR, PROCESSED_DATA_DIR, load_csv, load_parquet
 from src.data.preprocessing import add_imbalance, clean_station_df, preprocess_rental_data, preprocess_station_location
 from src.data.save_file import save_processed_data
 
 
 st.set_page_config(page_title="서울 공공자전거 수요 불균형 분석", layout="wide", page_icon="🚲")
 sns.set_theme(style="whitegrid", palette="deep")
+plt.rcParams["font.family"] = "Malgun Gothic"
 plt.rcParams["axes.unicode_minus"] = False
 
 
@@ -85,26 +86,14 @@ loading_skeleton = st.skeleton(height=220)
 # save_processed_data(rental_df, "SeoulBikeRental_20260401_7days_processed.csv")
 # save_processed_data(station_df, "SeoulBikeStationMaster_processed.csv")
 
-rental_df = load_csv("SeoulBikeRental_20260401_7days_processed.csv", PROCESSED_DATA_DIR)
+# rental_df = load_csv("SeoulBikeRental_20260401_7days_processed.csv", PROCESSED_DATA_DIR)
 station_df = load_csv("SeoulBikeStationMaster_processed.csv", PROCESSED_DATA_DIR)
 
+rental_df = load_parquet("SeoulBikeRental_20260401_7days_processed.parquet", PROCESSED_DATA_DIR)
 
-# HF_BASE_URL = "https://huggingface.co/datasets/e-un000/SeoulBikeRental/resolve/main"
-# @st.cache_data
-# def load_csv_from_hf(filename: str) -> pd.DataFrame:
-#     """Hugging Face Hub에서 CSV를 읽어옵니다. 앱 실행 중에는 캐시되어 재다운로드하지 않습니다."""
-#     url = f"{HF_BASE_URL}/{filename}"
-#     return pd.read_csv(url)
-
-
-# rental_df = load_csv_from_hf("SeoulBikeRental_20260401_7days_processed.csv")
-# station_df = load_csv_from_hf("SeoulBikeRental_20260401_7days_station_categories.csv")
 
 rental_df["rent_dt"] = pd.to_datetime(rental_df["rent_dt"], errors="coerce")
 rental_df["rtn_dt"] = pd.to_datetime(rental_df["rtn_dt"], errors="coerce")
-
-
-
 
 
 
@@ -112,19 +101,14 @@ loading_skeleton.empty()
 
 
 
+# categorized_rentals = add_station_categories(rental_df)
+# output_filename = "SeoulBikeRental_20260401_7days_station_categories.csv"
+# output_path = PROCESSED_DATA_DIR / output_filename
+# if not output_path.exists():
+#     save_processed_data(categorized_rentals, output_filename)
 
 
-categorized_rentals = add_station_categories(rental_df)
-output_filename = "SeoulBikeRental_20260401_7days_station_categories.csv"
-output_path = PROCESSED_DATA_DIR / output_filename
-if not output_path.exists():
-    save_processed_data(categorized_rentals, output_filename)
-
-# categorized_rentals = load_csv_from_hf("SeoulBikeRental_20260401_7days_station_categories.csv")
-
-
-
-
+categorized_rentals = load_parquet("SeoulBikeRental_20260401_7days_station_categories.parquet", PROCESSED_DATA_DIR)
 
 hourly_category_imbalance = calculate_hourly_category_imbalance(categorized_rentals)
 
