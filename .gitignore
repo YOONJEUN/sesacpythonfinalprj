@@ -11,4 +11,5 @@ wheels/
 
 # 환경변수 및 인증키
 .env
-data
+data/raw
+.streamlit/secrets.toml

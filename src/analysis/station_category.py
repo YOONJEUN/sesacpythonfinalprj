@@ -137,7 +137,6 @@ def calculate_commute_station_priorities(
 
 
 def create_commute_priority_bubble_chart(priority_df: pd.DataFrame, top_n: int = 20) -> plt.Figure:
-    """Show morning/evening imbalance patterns; bubble size encodes priority."""
     data = priority_df.head(top_n).copy()
     colors = data["category"].map({"지하철/버스": "#356FA8", "주거지": "#4B9B70", "회사": "#D9873D"})
     fig, ax = plt.subplots(figsize=(11, 8))

@@ -1,14 +1,24 @@
 import os
 
 import pandas as pd
+import streamlit as st
 from dotenv import load_dotenv
 from openai import OpenAI
 
 
-load_dotenv()
-api_key = os.getenv("OPENAI_API_KEY")
-client = OpenAI(api_key=api_key)
+# load_dotenv()
+# api_key = os.getenv("OPENAI_API_KEY")
+# client = OpenAI(api_key=api_key)
 
+
+
+def get_api_key():
+    if "OPENAI_API_KEY" in st.secrets:
+        return st.secrets["OPENAI_API_KEY"]
+    load_dotenv()
+    return os.getenv("OPENAI_API_KEY")  
+
+client = OpenAI(api_key=get_api_key())
 
 def generate_monthly_imbalance_insight(
     monthly_imbalances: dict[str, pd.DataFrame],

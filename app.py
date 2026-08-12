@@ -93,7 +93,10 @@ rental_df["rtn_dt"] = pd.to_datetime(rental_df["rtn_dt"], errors="coerce")
 
 loading_skeleton.empty()
 
-# 3번 그래프와 상단 KPI에서 공통으로 사용할 대여소 유형별 시간대 불균형 데이터를 미리 계산합니다.
+
+
+
+
 categorized_rentals = add_station_categories(rental_df)
 output_filename = "SeoulBikeRental_20260401_7days_station_categories.csv"
 output_path = PROCESSED_DATA_DIR / output_filename
@@ -116,11 +119,57 @@ commute_peak = hourly_category_imbalance.loc[
     hourly_category_imbalance["hour"].isin([7, 8, 9, 17, 18, 19])
 ].loc[lambda data: data["imbalance"].abs().idxmax()]
 
-# 대시보드 최상단 KPI 카드: 3번 유형별 시간대 불균형 그래프의 핵심 수치를 요약합니다.
-kpi1, kpi2, kpi3 = st.columns(3)
-kpi1.metric("최대 절대 불균형", f"{abs(peak_imbalance['imbalance']):,.0f}건", f"{peak_imbalance['category']} · {peak_imbalance['hour']}시")
-kpi2.metric("재배치 우선 유형", category_priority, "시간대별 불균형 절댓값 합계 기준")
-kpi3.metric("출퇴근 최대 불균형", f"{abs(commute_peak['imbalance']):,.0f}건", f"{commute_peak['category']} · {commute_peak['hour']}시")
+# KPI 계산을 위해 4번 섹션에서 쓰던 출퇴근 재배치 우선순위를 앞으로 끌어옵니다.
+commute_priority, _ = calculate_commute_station_priorities(categorized_rentals)
+
+# --- KPI 1: 불균형 비율 (규모) ---
+total_rental_all = sum(data["rent_cnt"].sum() for data in comparison_station_data.values())
+total_imbalance_all = sum(data["imbalance"].abs().sum() for data in comparison_station_data.values())
+imbalance_ratio = total_imbalance_all / total_rental_all * 100
+
+# --- KPI 2: 전년 대비 증감률 (추세) ---
+latest_period = "불균형 합계 (25.07~26.06)"
+previous_period = "불균형 합계 (24.07~25.06)"
+latest_total = monthly_imbalances[latest_period]["imbalance_abs_sum"].sum()
+previous_total = monthly_imbalances[previous_period]["imbalance_abs_sum"].sum()
+yoy_change = (latest_total - previous_total) / previous_total * 100
+
+# 최신 1년의 총 대여 건수와 직전 1년 대비 증감률을 계산합니다.
+latest_rental_total = monthly_rentals[latest_period]["total_rentals"].sum()
+previous_rental_total = monthly_rentals[previous_period]["total_rentals"].sum()
+rental_yoy_change = (latest_rental_total - previous_rental_total) / previous_rental_total * 100
+
+# --- KPI 3: 재배치 시급 대여소 수 (액션) ---
+# 순불균형 절댓값 기준 상위 10%를 "시급" 대여소로 정의합니다.
+urgent_threshold = commute_priority["net_imbalance"].abs().quantile(0.9)
+urgent_count = commute_priority.loc[commute_priority["net_imbalance"].abs() >= urgent_threshold].shape[0]
+
+# 대시보드 최상단 KPI 카드: 규모 → 추세 → 액션 → 시점 순으로 전체 현황을 요약합니다.
+kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+kpi1.metric(
+    "공공자전거 1년간 총 대여 수",
+    f"{latest_rental_total:,.0f}건",
+    f"전년 대비 {rental_yoy_change:+.1f}%",
+)
+kpi2.metric(
+    "불균형 비율",
+    f"{imbalance_ratio:.1f}%",
+    "전체 대여 건수 대비 불균형 절대값 비중",
+)
+kpi3.metric(
+    "재배치 시급 대여소",
+    f"{urgent_count}곳",
+    "출퇴근 순불균형 절댓값 상위 10%",
+)
+kpi4.metric(
+    "출퇴근 최대 불균형",
+    f"{abs(commute_peak['imbalance']):,.0f}건",
+    f"{commute_peak['category']} · {commute_peak['hour']}시",
+)
+
+
+
+
 
 
 # 체크박스 변경 시 이 함수 내부만 다시 실행해, 대시보드 전체 새로고침을 방지합니다.
@@ -128,7 +177,26 @@ kpi3.metric("출퇴근 최대 불균형", f"{abs(commute_peak['imbalance']):,.0f
 def render_monthly_imbalance_diagnosis() -> None:
     """월별 불균형 진단 영역만 독립적으로 화면에 그립니다."""
     with st.container(border=True):
-        st.header("1. 월별 대여·반납 불균형 진단")
+        st.markdown(
+            """
+            <div style="
+                display: inline-flex;
+                align-items: center;
+                background-color: #FFFFFF;
+                padding: 8px 20px;
+                border-radius: 8px;
+                margin-bottom: 12px;
+            ">
+                <h3 style="margin: 0; color: #1E3A5F; font-weight: 700;">
+                    월별 대여·반납 불균형 진단
+                </h3>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+
+
         st.subheader("절대값 불균형 합계")
 
         # 7월부터 다음 해 6월까지의 월 순서와 x축 위치를 지정합니다.
@@ -197,6 +265,8 @@ def render_monthly_imbalance_diagnosis() -> None:
             fig.subplots_adjust(top=0.82)
             st.pyplot(fig, clear_figure=True)
 
+            with st.container(border=True):
+                st.write("aI 인사이트 넣을 곳~")
             # # 버튼 클릭 시에만 OpenAI API를 호출해 그래프 수치 기반 인사이트를 생성합니다.
             # if st.button("AI 그래프 인사이트 생성", key="monthly_imbalance_insight_button"):
             #     try:
@@ -223,7 +293,24 @@ render_monthly_imbalance_diagnosis()
 
 # 2. 2026년 4월
 with st.container(border=True):
-    st.header("2. 2026년 4월 분석")
+    st.markdown(
+        """
+        <div style="
+            display: inline-flex;
+            align-items: center;
+            background-color: #FFFFFF;
+            padding: 8px 20px;
+            border-radius: 8px;
+            margin-bottom: 12px;
+        ">
+            <h3 style="margin: 0; color: #1E3A5F; font-weight: 700;">
+                2. 2026년 4월 분석
+            </h3>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
     st.subheader("4월 첫째 주 대여소별 평균 수요 불균형 지수")
     weekly_average_imbalance = calculate_weekly_average_station_hourly_imbalance(rental_df)
 
@@ -365,7 +452,24 @@ with st.container(border=True):
 
 # 3. 대여소 유형별 시간대 불균형
 with st.container(border=True):
-    st.header("3. 대여소 유형별 시간대 불균형")
+    st.markdown(
+            """
+            <div style="
+                display: inline-flex;
+                align-items: center;
+                background-color: #FFFFFF;
+                padding: 8px 20px;
+                border-radius: 8px;
+                margin-bottom: 12px;
+            ">
+                <h3 style="margin: 0; color: #1E3A5F; font-weight: 700;">
+                    3. 대여소 유형별 시간대 불균형
+                </h3>
+            </div>
+            """,
+            unsafe_allow_html=True,
+    )
+        
 
     category_options = hourly_category_imbalance["category"].drop_duplicates().tolist()
 
@@ -430,13 +534,24 @@ with st.container(border=True):
 
 # 4. 출퇴근 시간대 재배치 우선순위
 with st.container(border=True):
-    st.header("4. 출퇴근 시간대 재배치 우선순위")
-    st.write(
-        "지하철/버스·주거지·회사 유형 중 오전 7-9시와 오후 17-19시의 불균형이 큰 대여소를 추렸습니다. "
-        "우선순위는 각 시간대 순불균형의 절댓값 합으로 계산합니다. 양수는 자전거 공급, 음수는 자전거 회수가 필요한 상태입니다."
-    )
 
-    commute_priority, _ = calculate_commute_station_priorities(categorized_rentals)
+    st.markdown(
+        """
+        <div style="
+            display: inline-flex;
+            align-items: center;
+            background-color: #FFFFFF;
+            padding: 8px 20px;
+            border-radius: 8px;
+            margin-bottom: 12px;
+        ">
+            <h3 style="margin: 0; color: #1E3A5F; font-weight: 700;">
+                4. 출퇴근 시간대 재배치 우선순위
+            </h3>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     # 4번 그래프의 필터와 결과를 fragment로 묶어, 필터 변경 시 이 영역만 갱신합니다.
     @st.fragment
