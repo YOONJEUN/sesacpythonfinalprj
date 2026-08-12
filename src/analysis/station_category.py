@@ -98,48 +98,278 @@ def create_hourly_category_imbalance_chart(
     return fig
 
 
+
+#==================================================
+#==================================================
+#==================================================
 def calculate_commute_station_priorities(
     categorized_df: pd.DataFrame,
+    selected_category: str = "전체",
     morning_hours: range = range(7, 10),
     evening_hours: range = range(17, 20),
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Return commute-hour station imbalances and rebalancing priorities."""
+    """출퇴근 시간대 대여소별 불균형과 재배치 우선순위를 계산합니다."""
+
+    # ============================================================
+    # 1. 대여 데이터
+    # ============================================================
+
+    rentals_df = categorized_df.copy()
+
+    if selected_category != "전체":
+        rentals_df = rentals_df[
+            rentals_df["rent_category"].eq(selected_category)
+        ].copy()
+
     rentals = (
-        categorized_df.groupby(["rent_id", "rent_nm", "rent_category", "rent_hour"]).size().rename("rentals").reset_index()
-        .rename(columns={"rent_id": "station_id", "rent_nm": "station_name", "rent_category": "category", "rent_hour": "hour"})
+        rentals_df
+        .groupby(
+            [
+                "rent_id",
+                "rent_nm",
+                "rent_category",
+                "rent_hour",
+            ]
+        )
+        .size()
+        .rename("rentals")
+        .reset_index()
+        .rename(
+            columns={
+                "rent_id": "station_id",
+                "rent_nm": "station_name",
+                "rent_category": "category",
+                "rent_hour": "hour",
+            }
+        )
     )
+
+    # ============================================================
+    # 2. 반납 데이터
+    # ============================================================
+
+    returns_df = categorized_df.dropna(
+        subset=["rtn_hour"]
+    ).copy()
+
+    if selected_category != "전체":
+        returns_df = returns_df[
+            returns_df["rtn_category"].eq(selected_category)
+        ].copy()
+
     returns = (
-        categorized_df.dropna(subset=["rtn_hour"]).groupby(["rtn_id", "rtn_nm", "rtn_category", "rtn_hour"]).size().rename("returns").reset_index()
-        .rename(columns={"rtn_id": "station_id", "rtn_nm": "station_name", "rtn_category": "category", "rtn_hour": "hour"})
+        returns_df
+        .groupby(
+            [
+                "rtn_id",
+                "rtn_nm",
+                "rtn_category",
+                "rtn_hour",
+            ]
+        )
+        .size()
+        .rename("returns")
+        .reset_index()
+        .rename(
+            columns={
+                "rtn_id": "station_id",
+                "rtn_nm": "station_name",
+                "rtn_category": "category",
+                "rtn_hour": "hour",
+            }
+        )
     )
-    station_hourly = pd.merge(rentals, returns, on=["station_id", "station_name", "category", "hour"], how="outer").fillna({"rentals": 0, "returns": 0})
-    station_hourly["imbalance"] = station_hourly["rentals"] - station_hourly["returns"]
+
+    # ============================================================
+    # 3. 대여 + 반납을 대여소 / 시간대 기준으로 결합
+    # ============================================================
+
+    station_hourly = pd.merge(
+        rentals,
+        returns,
+        on=[
+            "station_id",
+            "station_name",
+            "category",
+            "hour",
+        ],
+        how="outer",
+    )
+    station_hourly["rentals"] = station_hourly["rentals"].fillna(0)
+    station_hourly["returns"] = station_hourly["returns"].fillna(0)
+
+    station_hourly["category"] = station_hourly["category"].fillna("기타")
+
+    # ============================================================
+    # 4. 불균형 계산
+    #    대여 - 반납
+    # ============================================================
+
+    station_hourly["imbalance"] = (
+        station_hourly["rentals"]
+        - station_hourly["returns"]
+    )
+
+    # ============================================================
+    # 5. 출퇴근 시간대만 추출
+    # ============================================================
+
+    commute_hours = [
+        *morning_hours,
+        *evening_hours,
+    ]
+
     station_hourly = station_hourly.loc[
-        station_hourly["category"].isin(COMMUTE_CATEGORIES)
-        & station_hourly["hour"].isin([*morning_hours, *evening_hours])
+        station_hourly["hour"].isin(commute_hours)
     ].copy()
-    station_hourly["period"] = station_hourly["hour"].isin(morning_hours).map({True: "오전 출근", False: "오후 퇴근"})
-    period_imbalance = (
-        station_hourly.groupby(["station_id", "station_name", "category", "period"], as_index=False)["imbalance"].sum()
-        .pivot(index=["station_id", "station_name", "category"], columns="period", values="imbalance")
-        .fillna(0).reset_index()
+
+    # ============================================================
+    # 6. 오전 / 오후 구분
+    # ============================================================
+
+    station_hourly["period"] = (
+        station_hourly["hour"]
+        .isin(morning_hours)
+        .map(
+            {
+                True: "오전 출근",
+                False: "오후 퇴근",
+            }
+        )
     )
+
+    # ============================================================
+    # 7. 대여소별 오전 / 오후 불균형 합계
+    # ============================================================
+
+    period_imbalance = (
+        station_hourly
+        .groupby(
+            [
+                "station_id",
+                "station_name",
+                "category",
+                "period",
+            ],
+            as_index=False,
+        )["imbalance"]
+        .sum()
+        .pivot(
+            index=[
+                "station_id",
+                "station_name",
+                "category",
+            ],
+            columns="period",
+            values="imbalance",
+        )
+        .fillna(0)
+        .reset_index()
+    )
+
+    # ============================================================
+    # 8. 오전 / 오후 컬럼이 없는 경우 0으로 생성
+    # ============================================================
+
     for period in ("오전 출근", "오후 퇴근"):
-        if period not in period_imbalance:
+        if period not in period_imbalance.columns:
             period_imbalance[period] = 0
-    priority = period_imbalance.rename(columns={"오전 출근": "morning_imbalance", "오후 퇴근": "evening_imbalance"})
-    priority["commute_priority"] = priority["morning_imbalance"].abs() + priority["evening_imbalance"].abs()
-    priority["net_imbalance"] = priority["morning_imbalance"] + priority["evening_imbalance"]
-    priority["recommended_action"] = priority["net_imbalance"].ge(0).map({True: "자전거 공급 우선", False: "자전거 회수 우선"})
-    priority = priority.sort_values("commute_priority", ascending=False).reset_index(drop=True)
+
+    # ============================================================
+    # 9. 재배치 우선순위 계산
+    # ============================================================
+
+    priority = period_imbalance.rename(
+        columns={
+            "오전 출근": "morning_imbalance",
+            "오후 퇴근": "evening_imbalance",
+        }
+    )
+
+    priority["commute_priority"] = (
+        priority["morning_imbalance"].abs()
+        + priority["evening_imbalance"].abs()
+    )
+
+    priority["net_imbalance"] = (
+        priority["morning_imbalance"]
+        + priority["evening_imbalance"]
+    )
+
+    priority["recommended_action"] = (
+        priority["net_imbalance"]
+        .ge(0)
+        .map(
+            {
+                True: "자전거 공급 우선",
+                False: "자전거 회수 우선",
+            }
+        )
+    )
+
+    # ============================================================
+    # 10. 우선순위 순으로 정렬
+    # ============================================================
+
+    priority = (
+        priority
+        .sort_values(
+            "commute_priority",
+            ascending=False,
+        )
+        .reset_index(drop=True)
+    )
+
     priority.index += 1
     priority.index.name = "priority_rank"
+
     return priority.reset_index(), station_hourly
+
+# def calculate_commute_station_priorities(
+#     categorized_df: pd.DataFrame,
+#     morning_hours: range = range(7, 10),
+#     evening_hours: range = range(17, 20),
+# ) -> tuple[pd.DataFrame, pd.DataFrame]:
+#     """선택한 대여소 유형의 출퇴근 시간대 재배치 우선순위를 계산합니다."""
+#     rentals = (
+#         categorized_df.groupby(["rent_id", "rent_nm", "rent_category", "rent_hour"]).size().rename("rentals").reset_index()
+#         .rename(columns={"rent_id": "station_id", "rent_nm": "station_name", "rent_category": "category", "rent_hour": "hour"})
+#     )
+#     returns = (
+#         categorized_df.dropna(subset=["rtn_hour"]).groupby(["rtn_id", "rtn_nm", "rtn_category", "rtn_hour"]).size().rename("returns").reset_index()
+#         .rename(columns={"rtn_id": "station_id", "rtn_nm": "station_name", "rtn_category": "category", "rtn_hour": "hour"})
+#     )
+#     station_hourly = pd.merge(rentals, returns, on=["station_id", "station_name", "category", "hour"], how="outer").fillna({"rentals": 0, "returns": 0})
+#     station_hourly["imbalance"] = station_hourly["rentals"] - station_hourly["returns"]
+#     station_hourly = station_hourly.loc[
+#         station_hourly["category"].isin(COMMUTE_CATEGORIES)
+#         & station_hourly["hour"].isin([*morning_hours, *evening_hours])
+#     ].copy()
+#     station_hourly["period"] = station_hourly["hour"].isin(morning_hours).map({True: "오전 출근", False: "오후 퇴근"})
+#     period_imbalance = (
+#         station_hourly.groupby(["station_id", "station_name", "category", "period"], as_index=False)["imbalance"].sum()
+#         .pivot(index=["station_id", "station_name", "category"], columns="period", values="imbalance")
+#         .fillna(0).reset_index()
+#     )
+#     for period in ("오전 출근", "오후 퇴근"):
+#         if period not in period_imbalance:
+#             period_imbalance[period] = 0
+#     priority = period_imbalance.rename(columns={"오전 출근": "morning_imbalance", "오후 퇴근": "evening_imbalance"})
+#     priority["commute_priority"] = priority["morning_imbalance"].abs() + priority["evening_imbalance"].abs()
+#     priority["net_imbalance"] = priority["morning_imbalance"] + priority["evening_imbalance"]
+#     priority["recommended_action"] = priority["net_imbalance"].ge(0).map({True: "자전거 공급 우선", False: "자전거 회수 우선"})
+#     priority = priority.sort_values("commute_priority", ascending=False).reset_index(drop=True)
+#     priority.index += 1
+#     priority.index.name = "priority_rank"
+#     return priority.reset_index(), station_hourly
 
 
 def create_commute_priority_bubble_chart(priority_df: pd.DataFrame, top_n: int = 20) -> plt.Figure:
     data = priority_df.head(top_n).copy()
-    colors = data["category"].map({"지하철/버스": "#356FA8", "주거지": "#4B9B70", "회사": "#D9873D"})
+    colors = [
+        CATEGORY_COLORS.get(category, "#999999")
+        for category in data["category"]
+    ]
     fig, ax = plt.subplots(figsize=(11, 8))
     ax.scatter(data["morning_imbalance"], data["evening_imbalance"], s=data["commute_priority"].clip(lower=1) * 3, c=colors, alpha=0.7, edgecolors="white", linewidth=0.8)
     for _, row in data.head(10).iterrows():
@@ -149,7 +379,12 @@ def create_commute_priority_bubble_chart(priority_df: pd.DataFrame, top_n: int =
     ax.set_xlabel("출근 시간대 불균형")
     ax.set_ylabel("퇴근 시간대 불균형")
     ax.set_title("출퇴근 불균형 패턴")
-    handles = [plt.Line2D([], [], marker="o", linestyle="", color=color, label=category) for category, color in {"지하철/버스": "#356FA8", "주거지": "#4B9B70", "회사": "#D9873D"}.items()]
+    categories = [
+        category
+        for category in CATEGORY_COLORS
+        if category in data["category"].dropna().unique()
+    ]
+    handles = [plt.Line2D([], [], marker="o", linestyle="", color=CATEGORY_COLORS[category], label=category) for category in categories]
     ax.legend(handles=handles, title="대여소 유형", loc="best")
     ax.grid(alpha=0.25)
     fig.tight_layout()

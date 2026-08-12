@@ -8,6 +8,7 @@ from datetime import date
 import streamlit as st
 
 from src.data.preprocessing import preprocess_rental_data
+from src.analysis.station_category import CATEGORY_COLORS
 
 def calculate_monthly_imbalance(df: pd.DataFrame) -> pd.DataFrame:
     return (df.groupby("stat_mn", as_index=False).agg(imbalance_abs_sum=("imbalance_abs", "sum"))
@@ -50,19 +51,23 @@ def calculate_daily_station_hourly_imbalance(
 
 def calculate_weekly_average_station_hourly_imbalance(
     rental_df: pd.DataFrame,
+    selected_categories: list[str] | None = None,
     start_date: str = "2026-04-01",
     end_date: str = "2026-04-07",
 ) -> pd.DataFrame:
-    """Calculate the hourly mean station imbalance across a date range.
-
-    Station-hour combinations without trips are included as zero so that the
-    result represents the average across all stations and all seven days.
-    """
+    """선택한 대여소 유형을 기준으로 시간대별 평균 불균형을 계산합니다."""
     start = pd.Timestamp(start_date).normalize()
     end = pd.Timestamp(end_date).normalize()
 
+    # --------------------------------------------------
+    # 대여 데이터
+    # --------------------------------------------------
     rental_mask = rental_df["rent_dt"].dt.normalize().between(start, end)
-    return_mask = rental_df["rtn_dt"].dt.normalize().between(start, end)
+    rentals_data = rental_df.loc[rental_mask].copy()
+    if selected_categories is not None:
+        rentals_data = rentals_data.loc[
+            rentals_data["rent_category"].isin(selected_categories)
+        ]
     rentals = (
         rental_df.loc[rental_mask]
         .assign(date=lambda df: df["rent_dt"].dt.normalize())
@@ -72,6 +77,17 @@ def calculate_weekly_average_station_hourly_imbalance(
         .reset_index()
         .rename(columns={"rent_id": "station_id", "rent_hour": "hour"})
     )
+
+    # --------------------------------------------------
+    # 반납 데이터
+    # --------------------------------------------------
+    return_mask = rental_df["rtn_dt"].dt.normalize().between(start, end)
+    returns_data = rental_df.loc[return_mask].copy()
+    if selected_categories is not None:
+        returns_data = returns_data.loc[
+            returns_data["rtn_category"].isin(selected_categories)
+        ]
+
     returns = (
         rental_df.loc[return_mask]
         .assign(date=lambda df: df["rtn_dt"].dt.normalize())
@@ -81,10 +97,17 @@ def calculate_weekly_average_station_hourly_imbalance(
         .reset_index()
         .rename(columns={"rtn_id": "station_id", "rtn_hour": "hour"})
     )
+
+    # --------------------------------------------------
+    # 대상 대여소
+    # --------------------------------------------------
     station_ids = pd.Index(pd.concat([rentals["station_id"], returns["station_id"]]).dropna().unique())
     if station_ids.empty:
-        return pd.DataFrame({"hour": range(24), "average_imbalance": [0.0] * 24})
+        return pd.DataFrame({"hour": range(24), "average_imbalance": [0.0] * 24, "average_absolute_imbalance": [0.0] * 24,})
 
+    # --------------------------------------------------
+    # 모든 날짜 × 대여소 × 시간 조합 생성
+    # --------------------------------------------------
     index = pd.MultiIndex.from_product(
         [pd.date_range(start, end, freq="D"), station_ids, range(24)],
         names=["date", "station_id", "hour"],
@@ -96,6 +119,10 @@ def calculate_weekly_average_station_hourly_imbalance(
         .fillna(0)
         .reset_index()
     )
+
+    # --------------------------------------------------
+    # 불균형
+    # --------------------------------------------------
     station_hourly["imbalance"] = station_hourly["rentals"] - station_hourly["returns"]
     return (
         station_hourly.groupby("hour", as_index=False)
@@ -104,7 +131,6 @@ def calculate_weekly_average_station_hourly_imbalance(
             average_absolute_imbalance=("imbalance", lambda values: values.abs().mean()),
         )
     )
-
 
 def calculate_average_station_imbalance_by_bins(
     rental_df: pd.DataFrame,
@@ -190,14 +216,29 @@ def make_group_statistics(df: pd.DataFrame) -> dict[str, pd.DataFrame]:
 def calculate_hourly_returns(df: pd.DataFrame) -> pd.DataFrame:
     return df.dropna(subset=["rtn_hour"]).groupby("rtn_hour", as_index=False).size().rename(columns={"size": "return_count"})
 
-def calculate_station_rebalancing(df: pd.DataFrame) -> pd.DataFrame:
-    """Calculate station net flow and the absolute rebalancing priority.
+def calculate_station_rebalancing(df: pd.DataFrame, selected_categories: list[str] | None = None,) -> pd.DataFrame:
+    """선택한 대여소 유형의 재배치 우선순위를 계산합니다."""
 
-    Positive net_outflow means rentals exceed returns: deliver bikes there. Negative
-    values mean returns exceed rentals: collect bikes from there.
-    """
-    rentals = df.groupby(["rent_id", "rent_nm"]).size().rename("rentals")
-    returns = df.groupby(["rtn_id", "rtn_nm"]).size().rename("returns")
+    # --------------------------------------------------
+    # 대여
+    # --------------------------------------------------
+    rental_data = df.copy()
+    if selected_categories is not None:
+        rental_data = rental_data.loc[
+            rental_data["rent_category"].isin(selected_categories)
+        ]
+    rentals = rental_data.groupby(["rent_id", "rent_nm"]).size().rename("rentals")
+
+    # --------------------------------------------------
+    # 반납
+    # --------------------------------------------------
+    return_data = df.copy()
+    if selected_categories is not None:
+        return_data = return_data.loc[
+            return_data["rtn_category"].isin(selected_categories)
+        ]
+
+    returns = return_data.groupby(["rtn_id", "rtn_nm"]).size().rename("returns")
     rentals.index = rentals.index.set_names(["station_id", "station_name"])
     returns.index = returns.index.set_names(["station_id", "station_name"])
     result = pd.concat([rentals, returns], axis=1).fillna(0).reset_index()
@@ -235,4 +276,50 @@ def create_bar_chart(
 # ====================================================================================================================================
 # ====================================================================================================================================
 
+def create_commute_priority_bar_chart(
+    priority_df: pd.DataFrame,
+    top_n: int = 20,
+) -> plt.Figure:
+    """재배치 우선순위 상위 대여소를 가로 막대그래프로 표시합니다."""
 
+    data = (
+        priority_df
+        .head(top_n)
+        .sort_values("commute_priority", ascending=True)
+        .copy()
+    )
+
+    fig, ax = plt.subplots(figsize=(10, 8))
+
+    # 대여소 유형별 색상
+    colors = [
+        CATEGORY_COLORS.get(category, "#999999")
+        for category in data["category"]
+    ]
+
+    bars = ax.barh(
+        data["station_name"].tolist(),
+        data["commute_priority"].tolist(),
+        color=colors,
+    )
+
+    # 막대 끝에 수치 표시
+    ax.bar_label(
+        bars,
+        labels=[
+            f"{value:,.0f}"
+            for value in data["commute_priority"]
+        ],
+        padding=5,
+        fontsize=9,
+    )
+
+    ax.set_xlabel("재배치 우선순위")
+    ax.set_ylabel("", rotation=70)
+    ax.set_title(f"재배치 우선순위 상위 {top_n}개 대여소")
+
+    ax.grid(axis="x", alpha=0.25)
+
+    fig.tight_layout()
+
+    return fig

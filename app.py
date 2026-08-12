@@ -20,6 +20,7 @@ from src.analysis.analysis import (
     calculate_top_routes,
     create_bar_chart,
     make_group_statistics,
+    create_commute_priority_bar_chart
 )
 from src.analysis.station_category import (
     add_station_categories,
@@ -33,7 +34,6 @@ from src.data.loader import RAW_DATA_DIR, PROCESSED_DATA_DIR, load_csv, load_par
 from src.data.preprocessing import add_imbalance, clean_station_df, preprocess_rental_data, preprocess_station_location
 from src.data.save_file import save_processed_data
 
-
 st.set_page_config(page_title="서울 공공자전거 수요 불균형 분석", layout="wide", page_icon="🚲")
 sns.set_theme(style="whitegrid", palette="deep")
 
@@ -43,15 +43,6 @@ plt.rcParams["axes.unicode_minus"] = False
 st.title("서울 공공자전거 수요 불균형 분석")
 st.caption("따릉이의 대여 및 반납 불균형을 분석하여 자전거 재배치 우선순위 결정")
 
-# loading_skeleton = st.skeleton(height=220)
-
-categorized_rentals = load_parquet("SeoulBikeRental_20260401_7days_station_categories.parquet", PROCESSED_DATA_DIR)
-hourly_category_imbalance = calculate_hourly_category_imbalance(categorized_rentals)
-commute_priority, _ = calculate_commute_station_priorities(categorized_rentals)
-
-
-# 대여소 유형별 리스트
-category_options = hourly_category_imbalance["category"].drop_duplicates().tolist()
 
 # '전체' 체크박스 변경 시 모든 대여소 유형 체크박스 상태를 함께 변경합니다.
 def toggle_all_station_categories() -> None:
@@ -66,18 +57,25 @@ def sync_all_station_categories() -> None:
         for category in category_options
 )
 
+# 지도용
+# station_df = load_csv("SeoulBikeStationMaster_processed.csv", PROCESSED_DATA_DIR)
 
-station_df = load_csv("SeoulBikeStationMaster_processed.csv", PROCESSED_DATA_DIR)
-rental_df = load_parquet("SeoulBikeRental_20260401_7days_processed.parquet", PROCESSED_DATA_DIR)
-
+# ============================================
+# 데이터 로드
+# ============================================
+categorized_rentals = load_parquet("SeoulBikeRental_20260401_7days_station_categories.parquet", PROCESSED_DATA_DIR)
+rental_df = categorized_rentals.copy()
 rental_df["rent_dt"] = pd.to_datetime(rental_df["rent_dt"], errors="coerce")
 rental_df["rtn_dt"] = pd.to_datetime(rental_df["rtn_dt"], errors="coerce")
 
-# loading_skeleton.empty()
+hourly_category_imbalance = calculate_hourly_category_imbalance(categorized_rentals)
 
+# 대여소 유형별 리스트
+category_options = hourly_category_imbalance["category"].drop_duplicates().tolist()
 
-
-# 필터링 조건이 있는 곳
+# ============================================
+# 필터
+# ============================================
 with st.container(border=True):
     col1, col2, col3, col4 = st.columns(4)
     with col1:
@@ -93,34 +91,136 @@ with st.container(border=True):
             else:
                 selected_categories = [selected_category]
 
+# commute_priority, _ = calculate_commute_station_priorities(categorized_rentals)
+commute_priority, commute_hourly = (
+    calculate_commute_station_priorities(
+        categorized_rentals,
+        selected_category=selected_category,
+    )
+)
+
+if selected_category == "전체":
+    filtered_categorized_rentals = categorized_rentals.copy()
+else:
+    filtered_categorized_rentals = categorized_rentals[
+        categorized_rentals["rent_category"].eq(selected_category)
+        | categorized_rentals["rtn_category"].eq(selected_category)
+    ].copy()
+
+
+
+
+# 대여소별 재배치 우선순위 계산
+station_rebalancing = calculate_station_rebalancing(rental_df, selected_categories)
+
+# ============================================
+# KPI
+# ============================================
+# 1. 총 대여 건수
+total_rentals = rental_df.loc[
+    rental_df["rent_category"].isin(selected_categories)
+].shape[0]
+
+# 2. 총 반납 건수
+total_returns = rental_df.loc[
+    rental_df["rtn_category"].isin(selected_categories)
+    & rental_df["rtn_dt"].notna()
+].shape[0]
+
+# 3. 전체 대여소의 불균형 절대값 합계
+total_imbalance_abs = station_rebalancing["rebalancing_priority"].sum()
+
+# 4. 불균형이 가장 큰 상위 10% 대여소 수
+if station_rebalancing.empty:
+    urgent_station_count = 0
+else:
+    priority_threshold = (
+        station_rebalancing["rebalancing_priority"]
+        .quantile(0.95)
+    )
+
+    urgent_station_count = (
+        station_rebalancing["rebalancing_priority"]
+        >= priority_threshold
+    ).sum()
+
+# ============================================
+# 시간대별 평균 불균형
+# ============================================
+weekly_average_imbalance = calculate_weekly_average_station_hourly_imbalance(rental_df, selected_categories)
+
 # KPI 
 col1, col2, col3, col4 = st.columns(4)
 with col1:
     with st.container(border=True):
-        st.subheader("첫 번째")
-        st.write("첫 번째 내용")
+        st.metric(
+            label="🚲 총 대여 건수",
+            value=f"{total_rentals:,}건",
+        )
 
 with col2:
     with st.container(border=True):
-        st.subheader("두 번째")
-        st.write("두 번째 내용")
+        st.metric(
+            label="총 반납 건수",
+            value=f"{total_returns:,}건",
+        )
 
 with col3:
     with st.container(border=True):
-        st.subheader("세 번째")
-        st.write("세 번째 내용")
+        st.metric(
+            label="총 불균형 절대값",
+            value=f"{total_imbalance_abs:,}건",
+        )
 
 with col4:
     with st.container(border=True):
-        st.subheader("네 번째")
-        st.write("네 번째 내용")
+        st.metric(
+            label="재배치 필요 대여소",
+            value=f"{urgent_station_count:,}개소",
+        )
 
 
-col1, col2 = st.columns("")
+
+col1, col2 = st.columns(2)
 with col1:
     with st.container(border=True):
-        st.subheader("1번 그래프")
-        st.write("1번 그래프")
+        st.caption("시간대별 평균 수요 불균형 지수")
+        fig, ax = plt.subplots(figsize=(13, 6))
+        ax.plot(
+            weekly_average_imbalance["hour"],
+            weekly_average_imbalance["average_imbalance"],
+            marker="o",
+            color="#356FA8",
+            linewidth=2,
+        )
+        ax.fill_between(
+            weekly_average_imbalance["hour"],
+            weekly_average_imbalance["average_imbalance"],
+            0,
+            where=weekly_average_imbalance["average_imbalance"].ge(0),
+            color="#356FA8",
+            alpha=0.2,
+            interpolate=True,
+        )
+        ax.fill_between(
+            weekly_average_imbalance["hour"],
+            weekly_average_imbalance["average_imbalance"],
+            0,
+            where=weekly_average_imbalance["average_imbalance"].lt(0),
+            color="#C9534B",
+            alpha=0.2,
+            interpolate=True,
+        )
+        ax.axhline(0, color="#333333", linewidth=0.8)
+        ax.axvspan(7, 9, color="#E8EEF5", alpha=0.6, label="출근 시간대")
+        ax.axvspan(17, 19, color="#F9E9DB", alpha=0.6, label="퇴근 시간대")
+        ax.set_xticks(range(24))
+        ax.set_xlabel("시간대")
+        ax.set_ylabel("평균 수요 불균형 지수")
+        ax.set_title("시간대별 평균 수요 불균형 지수")
+        ax.grid(axis="y", alpha=0.3)
+        fig.tight_layout()
+        st.pyplot(fig, clear_figure=True)
 
 with col2:
     with st.container(border=True):
@@ -143,63 +243,59 @@ with col2:
 col1, col2 = st.columns(2)
 with col1:
     with st.container(border=True):
-        st.subheader("3번 그래프")
-        st.write("3번 그래프")
+        st.caption("재배치 우선순위")
+
+        if commute_priority.empty:
+            st.info(
+                "선택한 대여소 유형은 현재 출퇴근 우선순위 분석 대상이 아닙니다."
+            )
+        else:
+            # 4번 그래프의 필터와 결과를 fragment로 묶어, 필터 변경 시 이 영역만 갱신합니다.
+            @st.fragment
+            def render_commute_priority_chart() -> None:
+                
+                st.pyplot(
+                    create_commute_priority_bubble_chart(commute_priority),
+                    clear_figure=True,
+                )
+                
+        render_commute_priority_chart()
 
 with col2:
     with st.container(border=True):
-        st.subheader("4번 그래프")
-        st.write("4번 그래프")
-
-
-# 대여소 유형별 시간대 불균형
-with st.container(border=True):
-    st.header("대여소 유형별 시간대 불균형")
-        
-    
-
-
-
-
-# 4. 출퇴근 시간대 재배치 우선순위
-with st.container(border=True):
-    st.header("재배치 우선순위")
-
-    # 4번 그래프의 필터와 결과를 fragment로 묶어, 필터 변경 시 이 영역만 갱신합니다.
-    @st.fragment
-    def render_commute_priority_chart() -> None:
-        filter_column, chart_column = st.columns([2, 8], vertical_alignment="top")
-        with filter_column:
-            with st.container(border=True):
-                st.markdown("##### 필터링 조건")
-                top_station_count = st.slider(
-                    "표시할 상위 대여소 수",
-                    min_value=10,
-                    max_value=30,
-                    value=15,
-                    step=5,
-                    key="commute_priority_top_station_count",
-                )
-
-        with chart_column:
+        if commute_priority.empty:
+            st.info(
+                "선택한 대여소 유형은 현재 출퇴근 우선순위 분석 대상이 아닙니다."
+            )
+        else:
             st.pyplot(
-                create_commute_priority_bubble_chart(commute_priority, top_station_count),
+                create_commute_priority_bar_chart(
+                    commute_priority,
+                    top_n=20,
+                ),
                 clear_figure=True,
             )
-            st.dataframe(
-                commute_priority.head(top_station_count),
-                column_config={
-                    "priority_rank": "우선순위",
-                    "station_id": "대여소 ID",
-                    "station_name": "대여소명",
-                    "category": "유형",
-                    "morning_imbalance": "오전 불균형",
-                    "evening_imbalance": "오후 불균형",
-                    "commute_priority": "재배치 우선순위",
-                    "net_imbalance": "순불균형",
-                    "recommended_action": "권장 조치",
-                },
-                hide_index=True,
-            )
 
-    render_commute_priority_chart()
+with st.container(border=True):
+    display_df = commute_priority.head(15).drop(
+        columns="commute_priority"
+    )
+    st.dataframe(
+        display_df,
+        column_config={
+            "priority_rank": "우선순위",
+            "station_id": "대여소 ID",
+            "station_name": "대여소명",
+            "category": "유형",
+            "morning_imbalance": "오전 불균형",
+            "evening_imbalance": "오후 불균형",
+            # "commute_priority": "재배치 우선순위",
+            "net_imbalance": "순불균형",
+            "recommended_action": "권장 조치",
+        },
+        hide_index=True,
+    )
+
+
+
+    
