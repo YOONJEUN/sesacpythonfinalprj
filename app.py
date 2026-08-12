@@ -86,10 +86,28 @@ loading_skeleton = st.skeleton(height=220)
 # save_processed_data(rental_df, "SeoulBikeRental_20260401_7days_processed.csv")
 # save_processed_data(station_df, "SeoulBikeStationMaster_processed.csv")
 
-rental_df = load_csv("SeoulBikeRental_20260401_7days_processed.csv", PROCESSED_DATA_DIR)
-station_df = load_csv("SeoulBikeStationMaster_processed.csv", PROCESSED_DATA_DIR)
+# rental_df = load_csv("SeoulBikeRental_20260401_7days_processed.csv", PROCESSED_DATA_DIR)
+# station_df = load_csv("SeoulBikeStationMaster_processed.csv", PROCESSED_DATA_DIR)
+
+
+HF_BASE_URL = "https://huggingface.co/datasets/e-un000/SeoulBikeRental/resolve/main"
+@st.cache_data
+def load_csv_from_hf(filename: str) -> pd.DataFrame:
+    """Hugging Face Hub에서 CSV를 읽어옵니다. 앱 실행 중에는 캐시되어 재다운로드하지 않습니다."""
+    url = f"{HF_BASE_URL}/{filename}"
+    return pd.read_csv(url)
+
+
+rental_df = load_csv_from_hf("SeoulBikeRental_20260401_7days_processed.csv")
+
+
 rental_df["rent_dt"] = pd.to_datetime(rental_df["rent_dt"], errors="coerce")
 rental_df["rtn_dt"] = pd.to_datetime(rental_df["rtn_dt"], errors="coerce")
+
+
+
+
+
 
 loading_skeleton.empty()
 
@@ -97,11 +115,18 @@ loading_skeleton.empty()
 
 
 
-categorized_rentals = add_station_categories(rental_df)
-output_filename = "SeoulBikeRental_20260401_7days_station_categories.csv"
-output_path = PROCESSED_DATA_DIR / output_filename
-if not output_path.exists():
-    save_processed_data(categorized_rentals, output_filename)
+# categorized_rentals = add_station_categories(rental_df)
+# output_filename = "SeoulBikeRental_20260401_7days_station_categories.csv"
+# output_path = PROCESSED_DATA_DIR / output_filename
+# if not output_path.exists():
+#     save_processed_data(categorized_rentals, output_filename)
+
+categorized_rentals = load_csv_from_hf("SeoulBikeRental_20260401_7days_station_categories.csv")
+
+
+
+
+
 hourly_category_imbalance = calculate_hourly_category_imbalance(categorized_rentals)
 
 # 대여소 유형·시간대 중 대여와 반납 차이가 가장 큰 지점을 찾습니다.
